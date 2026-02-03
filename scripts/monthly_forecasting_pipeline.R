@@ -5,6 +5,7 @@
 #  - Rolling / Expanding OLS via helper
 #  - Benchmark via rolling / expanding mean
 #  - Clark–West test
+#  - NH adjustment for multiple testing
 # ===========================================================
 
 # ---- 0) Packages ---------------------------------------------------------
@@ -29,6 +30,27 @@ suppressPackageStartupMessages({
 })
 if (!requireNamespace("roll", quietly = TRUE)) install.packages("roll")
 library(roll)
+
+
+# ---- 0.1) Output folders ------------------------------------------------
+
+OUT_FIG <- file.path("outputs", "monthly", "figures")
+OUT_TAB <- file.path("outputs", "monthly", "tables")
+
+FIG_EDA  <- file.path(OUT_FIG, "01_eda")
+FIG_BETA <- file.path(OUT_FIG, "02_rolling_betas")
+FIG_HM   <- file.path(OUT_FIG, "03_oos_heatmaps")
+FIG_PATH <- file.path(OUT_FIG, "04_oos_paths")
+FIG_APP  <- file.path(OUT_FIG, "05_appendix")
+
+TAB_EDA  <- file.path(OUT_TAB, "01_eda")
+TAB_IS   <- file.path(OUT_TAB, "02_insample")
+TAB_APP  <- file.path(OUT_TAB, "03_appendix")
+
+invisible(lapply(
+  c(FIG_EDA, FIG_BETA, FIG_HM, FIG_PATH, FIG_APP, TAB_EDA, TAB_IS, TAB_APP),
+  dir.create, recursive = TRUE, showWarnings = FALSE
+))
 
 # ---- 1) Load data --------------------------------------------------------
 
