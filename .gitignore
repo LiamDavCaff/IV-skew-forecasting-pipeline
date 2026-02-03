@@ -48,13 +48,11 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-# --- Keep folder structure but ignore contents ---
+# ignore data contents but keep placeholder
 data/*
 !data/.gitkeep
 
+# ignore all outputs but keep placeholders (folder structure)
 outputs/**
-!outputs/figures/
-!outputs/tables/
-!outputs/figures/.gitkeep
-!outputs/tables/.gitkeep
+!outputs/**/.gitkeep
 
