@@ -566,7 +566,7 @@ fig7_main <- ggplot(dplyr::filter(Mm, is.finite(ret_12m), is.finite(d_iv_pp)),
   geom_smooth(method = "lm", se = FALSE, linewidth = 0.8) +
   labs(x = "12-month excess return", y = "Next-month Δ ATM IV") +
   theme_minimal(base_size = 11)
-print(fig4_main)
+
 
 fit_m <- lm(d_iv_pp ~ ret_12m, data = Mm)
 cat("\n[INFO] HAC slope (ΔIVpp ~ 12m return):\n")
