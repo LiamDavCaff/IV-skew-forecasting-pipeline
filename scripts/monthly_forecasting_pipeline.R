@@ -38,7 +38,7 @@ OUT_FIG <- file.path("outputs", "monthly", "figures")
 OUT_TAB <- file.path("outputs", "monthly", "tables")
 
 FIG_EDA  <- file.path(OUT_FIG, "01_eda")
-FIG_BETA <- file.path(OUT_FIG, "02_rolling_betas")
+FIG_BETA <- file.path(OUT_FIG, "02_rolling_beta")
 FIG_HM   <- file.path(OUT_FIG, "03_oos_heatmaps")
 FIG_PATH <- file.path(OUT_FIG, "04_oos_paths")
 FIG_APP  <- file.path(OUT_FIG, "05_appendix")
@@ -55,7 +55,17 @@ invisible(lapply(
 # ---- 1) Load data --------------------------------------------------------
 
 # Update path if needed:
-data <- readRDS("C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/spx_iv_modelling_data.rds")
+DATA_FILE <- file.path("data", "bbg_spx_data.rds")
+
+if (!file.exists(DATA_FILE)) {
+  stop(
+    paste0("Missing ", DATA_FILE, ".\n",
+           "Place the file in the repo's data/ folder (it stays local / ignored)."),
+    call. = FALSE
+  )
+}
+
+data <- readRDS(DATA_FILE)
 stopifnot("date" %in% names(data))
 
 # ---- 2) Helpers ----------------------------------------------------------
@@ -359,8 +369,7 @@ valuation_macro_m <- c("log_ep","log_bm","t3m_yield","lty_yield","term_spread","
 # ---- 4b) Global Config for Forecasting -----------------------------------
 
 WINDOW_TYPE_BETA <- "rolling"   # "rolling" or "expanding" for rolling betas
-WINDOW_TYPE_OOS  <- "rolling"   # "rolling" or "expanding" for OOS regression
-BENCHMARK_OOS    <- "rolling"   # "rolling" or "expanding" for benchmark mean
+
 
 # ---- 5) Build monthly panel (cache once) --------------------------------
 
@@ -433,7 +442,7 @@ S_all %>%
   kable(format = "html", caption = "Full-sample summary statistics (monthly, end-of-month)") %>%
   kable_styling(full_width = FALSE)
 
-# Pretty labels for LaTeX
+# Nice labels for LaTeX
 var_labels_math <- c(
   "excess_1m"="Excess return (1m)", "excess_3m"="Excess return (3m)",
   "excess_6m"="Excess return (6m)", "excess_12m"="Excess return (12m)",
@@ -456,25 +465,34 @@ col_heads_math <- c(
   "$Q_{10\\%}$", "$\\tilde{x}$", "$Q_{90\\%}$", "$\\min$", "$\\max$", "$\\phi_{1}$"
 )
 
-knitr::kable(
-  tab1,
-  format    = "latex",
-  booktabs  = TRUE,
-  longtable = FALSE,
-  caption   = "Full-sample summary statistics (monthly, end-of-month).",
-  label     = "tab:summary_stats",
-  col.names = col_heads_math,
-  align     = c("l", rep("r", ncol(tab1)-1)),
-  escape    = FALSE
-) |>
-  kableExtra::kable_styling(latex_options = c("hold_position")) |>
-  kableExtra::row_spec(0, align = "c") |>
-  kableExtra::add_header_above(c(" " = 1, "Summary statistics" = ncol(tab1)-1)) |>
-  kableExtra::footnote(
-    general = "\\(\\mu\\)=mean, \\(\\sigma\\)=standard deviation, \\(Q_{p}\\)=quantile at probability \\(p\\), \\(\\tilde{x}\\)=median, \\(\\phi_{1}\\)=first-order autocorrelation.",
-    threeparttable = TRUE, escape = FALSE
+# Save output
+kableExtra::save_kable(
+  knitr::kable(
+    tab1,
+    format    = "latex",
+    booktabs  = TRUE,
+    longtable = FALSE,
+    caption   = "Full-sample summary statistics (monthly, end-of-month).",
+    label     = "tab:summary_stats",
+    col.names = col_heads_math,
+    align     = c("l", rep("r", ncol(tab1)-1)),
+    escape    = FALSE
   ) |>
-  kableExtra::save_kable("table1_summary_stats.tex")
+    kableExtra::kable_styling(latex_options = c("hold_position")) |>
+    kableExtra::row_spec(0, align = "c") |>
+    kableExtra::add_header_above(c(" " = 1, "Summary statistics" = ncol(tab1)-1)) |>
+    kableExtra::footnote(
+      general = "\\(\\mu\\)=mean, \\(\\sigma\\)=standard deviation, \\(Q_{p}\\)=quantile at probability \\(p\\), \\(\\tilde{x}\\)=median, \\(\\phi_{1}\\)=first-order autocorrelation.",
+      threeparttable = TRUE, escape = FALSE
+    ),
+  file = file.path(TAB_EDA, "table1_summary_stats.tex")
+)
+
+# 2) CSV for portability (no LaTeX labels; keep raw variable names)
+readr::write_csv(
+  S_all,
+  file.path(TAB_EDA, "table1_summary_stats.csv")
+)
 
 # Figure 1: Mean IV by moneyness
 iv_nodes <- c("iv_80","iv_90","iv_100","iv_110","iv_120")
@@ -494,6 +512,12 @@ fig1_main <- ggplot(iv_means, aes(x = moneyness, y = mean * 100)) +
   labs(x = "Moneyness", y = "Mean IV (%)") +
   theme_minimal()
 
+ggsave(
+  filename = file.path(FIG_EDA, "fig01_mean_iv_by_moneyness.png"),
+  plot     = fig1_main,
+  width    = 8, height = 4.5, dpi = 300
+)
+
 # Figure 2: Monthly IV by moneyness over time
 iv_monthly_long <- M_pct %>%
   transmute(month, `80%`=iv_80,`90%`=iv_90,`100%`=iv_100,`110%`=iv_110,`120%`=iv_120) %>%
@@ -506,7 +530,12 @@ fig2_main <- ggplot(iv_monthly_long, aes(x = month, y = iv, colour = moneyness))
   scale_y_continuous(name = "Implied Volatility (%)") +
   labs(x = NULL, colour = "Moneyness") +
   theme_minimal(base_size = 11)
-print(fig2_main)
+
+ggsave(
+  filename = file.path(FIG_EDA, "fig02_monthly_iv_by_moneyness_over_time.png"),
+  plot     = fig2_main,
+  width    = 8, height = 4.5, dpi = 300
+)
 
 # Figure 3: skew vs 12m returns
 df3 <- M_full %>%
@@ -525,6 +554,12 @@ fig3_main <- ggplot(df3, aes(month)) +
                                        "iv_skew_80_100"     = "steelblue")) +
   theme_minimal(base_size = 11)
 
+ggsave(
+  filename = file.path(FIG_EDA, "fig03_skew_vs_12m_returns.png"),
+  plot     = fig3_main,
+  width    = 8, height = 4.5, dpi = 300
+)
+
 # Figure 4: Volatility feedback
 Mm <- M_full %>%
   transmute(month, ret_12m = excess_12m,
@@ -542,12 +577,17 @@ fit_m <- lm(d_iv_pp ~ ret_12m, data = Mm)
 cat("\n[INFO] HAC slope (ΔIVpp ~ 12m return):\n")
 print(lmtest::coeftest(fit_m, vcov = sandwich::NeweyWest(fit_m, lag = 12)))
 
-# Figure 5a/b: PCA diagnostics
+ggsave(
+  filename = file.path(FIG_EDA, "fig04_volatility_feedback.png"),
+  plot     = fig4_main,
+  width    = 8, height = 4.5, dpi = 300
+)
+
+# Figure 5a/b: PCA diagnostics;Pc1 vs VIX
 iv_cols <- c("iv_80","iv_90","iv_100","iv_110","iv_120")
 ok_pca  <- stats::complete.cases(M_full[, iv_cols])
 Xm      <- M_full[ok_pca, iv_cols, drop = FALSE] %>% scale() %>% as.matrix()
 pcm     <- prcomp(Xm, center = FALSE, scale. = FALSE)
-summary(pcm)
 
 loadings_m <- as.data.frame(pcm$rotation) %>%
   tibble::rownames_to_column("moneyness") %>%
@@ -555,11 +595,16 @@ loadings_m <- as.data.frame(pcm$rotation) %>%
 load_long_m <- loadings_m %>% select(moneyness, PC1, PC2, PC3) %>%
   pivot_longer(-moneyness, names_to="PC", values_to="loading")
 
+#Figure 5a - loadings by moneyness
 fig5a_main <- ggplot(load_long_m, aes(moneyness, loading, group = PC, colour = PC)) +
   geom_line(aes(linetype = PC)) + geom_point(size = 2) +
   labs(x = "Moneyness node", y = "Loading") +
   theme_minimal(base_size = 11)
-print(fig5a_main)
+
+ggsave(
+  filename = file.path(FIG_EDA, "fig05a_pca_loadings.png"), 
+  plot     = fig5a_main, 
+  width    =8, height=4.5, dpi=300)
 
 scores_m <- as_tibble(pcm$x) %>% mutate(month = M_full$month[ok_pca])
 ov_m <- tibble(
@@ -568,17 +613,53 @@ ov_m <- tibble(
   VIX_z = as.numeric(scale(M_full$vix_ann[ok_pca]))
 )
 
+# Figure 5b; Vix vs PC1
 fig5b_main <- ggplot(ov_m, aes(month)) +
   geom_line(aes(y = PC1_z, colour = "PC1")) +
   geom_line(aes(y = VIX_z, colour = "VIX")) +
   labs(y = "z-score", x = NULL, colour = NULL) +
   theme_minimal()
-print(fig5b_main)
+
+ggsave(
+  filename = file.path(FIG_EDA, "fig05b_pc1_vs_vix.png"), 
+  plot     = fig5b_main, 
+  width    =8, height=4.5, dpi=300)
 
 cat("\n[INFO] PC1–VIX correlation (z): ",
     round(cor(scores_m$PC1, M_full$vix_ann[ok_pca], use="pairwise.complete.obs"), 3), "\n")
 
-# Appendix Figure A1: smile fit R² over time
+# Appendix Table B1: PCA variance explained 
+  imp_m <- summary(pcm)$importance[2:3, 1:3]  # Proportion + Cumulative for PC1-3
+
+imp_tbl <- as.data.frame(imp_m) %>%
+  tibble::rownames_to_column("stat") %>%
+  dplyr::mutate(stat = dplyr::recode(
+    stat,
+    "Proportion of Variance" = "Proportion",
+    "Cumulative Proportion"  = "Cumulative"
+  )) %>%
+  dplyr::rename(PC1 = `PC1`, PC2 = `PC2`, PC3 = `PC3`)
+
+# Save CSV (portable)
+readr::write_csv(imp_tbl, file.path(TAB_APP, "tableB1_pca_variance_explained.csv"))
+
+# Save LaTeX .tex (for \input{} in appendix)
+kableExtra::save_kable(
+  knitr::kable(
+    imp_tbl,
+    format   = "latex",
+    booktabs = TRUE,
+    caption  = "PCA variance explained (monthly IV surface).",
+    label    = "tab:pca_var_explained",
+    align    = c("l", "r", "r", "r"),
+    digits   = 3,
+    escape   = FALSE
+  ) |>
+    kableExtra::kable_styling(latex_options = "hold_position"),
+  file = file.path(TAB_APP, "tableB1_pca_variance_explained.tex")
+)
+
+# Appendix Figure B1: smile fit R² over time
 m_vec <- c(0.8,0.9,1.0,1.1,1.2)
 m_fit_m <- M_full %>%
   rowwise() %>%
@@ -593,43 +674,23 @@ figA1_appx <- ggplot(m_fit_m, aes(month, fit_r2)) +
   geom_line() +
   labs(y="R² (quadratic skew fit)", x = NULL) +
   theme_minimal(base_size = 11)
-print(figA1_appx)
+
+#save 
+ggsave(file.path(FIG_APP, "figB2_skew_fit_quality.png"),
+       figA1_appx, width=8, height=4, dpi=300)
 
 
-# Appendix Figure A2: IV distribution by moneyness
-figA2_appx <- ggplot(iv_monthly_long, aes(x = moneyness, y = iv, fill = moneyness)) +
+# Appendix Figure B2: IV distribution by moneyness
+figB2_appx <- ggplot(iv_monthly_long, aes(x = moneyness, y = iv, fill = moneyness)) +
   geom_violin(trim = FALSE, alpha = 0.7) +
   geom_boxplot(width = 0.12, outlier.shape = NA, color = "black") +
   scale_fill_scico_d(palette = "batlow", guide = "none") +
   labs(x = "Moneyness", y = "Implied Volatility (%)")  +
   theme_minimal(base_size = 11)
-print(figA2_appx)
-ggsave("Appendix_Dist_Moneyness.png", figA2_appx, width=8, height=4, dpi=300)
 
-# Appendix Table A1: PCA variance explained
-imp_m <- summary(pcm)$importance[2:3, 1:3]
-imp_tbl <- as.data.frame(imp_m) %>%
-  tibble::rownames_to_column("stat") %>%
-  mutate(stat = dplyr::recode(
-    stat,
-    "Proportion of Variance" = "Proportion",
-    "Cumulative Proportion"  = "Cumulative"
-  )) %>%
-  rename(PC1 = `PC1`, PC2 = `PC2`, PC3 = `PC3`)
+ggsave(file.path(FIG_APP, "figB2_iv_distribution_by_moneyness.png"),
+       figB2_appx, width=8, height=4, dpi=300)
 
-kable(imp_tbl, format = "html",
-      caption = "Table A1: PCA variance explained (monthly IV surface)") %>%
-  kable_styling(full_width = FALSE)
-
-# Optional exports
-#ggsave("fig1_iv_skew_mean.png", fig1_main, width=8, height=4.5, dpi=300)
-#ggsave("fig2_monthly_iv.png",  fig2_main, width=8, height=4.5, dpi=300)
-#ggsave("fig3_skew_12m_returns.png", fig3_main, width=8, height=4.5, dpi=300)
-#ggsave("fig4_vol_feedback.png",     fig4_main, width=8, height=4.5, dpi=300)
-#ggsave("fig5a_pca_loadings.png",    fig5a_main, width=8, height=4.5, dpi=300)
-#ggsave("fig5b_pc1_vix.png",         fig5b_main, width=8, height=4.5, dpi=300)
-# ggsave("figA1_smile_fit.png", figA1_appx, width=7, height=3.8, dpi=300)
-# ggsave("figA2_iv_violin.png",  figA2_appx, width=6.5, height=4.5, dpi=300)
 
 # ---- 7) IN-SAMPLE (UNIVARIATE) ------------------------------------------
 
@@ -727,7 +788,11 @@ insample_tbl_m <- in_sample_results_multi_from_M(M_full, c(1,3,6,12)) %>%
     horizon       = paste0(horizon_m, "m")
   ) 
 
-print(insample_tbl_m, n = nrow(insample_tbl_m))
+# Save the full long table (every predictor × horizon)
+readr::write_csv(
+  insample_tbl_m,
+  file.path(TAB_IS, "insample_results_long.csv")
+)
 
 # LATEX rows for in-sample table
 panel <- insample_tbl_m %>%
@@ -744,23 +809,54 @@ panel <- insample_tbl_m %>%
   ) %>%
   arrange(predictor)
 
+# Escape underscores etc. for LaTeX, and wrap in \texttt{}
 escape_pred <- function(x) {
-  paste0("\\texttt{", gsub("_", "\\\\_", x), "}")
+  x <- as.character(x)
+  x <- gsub("\\\\", "\\\\textbackslash{}", x)  # rare, but safe
+  x <- gsub("_", "\\\\_", x)
+  paste0("\\\\texttt{", x, "}")
 }
 
-for (i in seq_len(nrow(panel))) {
-  row <- panel[i, ]
-  pred_ltx <- escape_pred(row$predictor)
-  cat(
-    pred_ltx, " & ",
-    row$`1m_Beta_1sd_bps`, " & ", row$`1m_p_FDR`,  " & ", row$`1m_adj_R2_in`,  " & ",
-    row$`3m_Beta_1sd_bps`, " & ", row$`3m_p_FDR`,  " & ", row$`3m_adj_R2_in`,  " & ",
-    row$`6m_Beta_1sd_bps`, " & ", row$`6m_p_FDR`,  " & ", row$`6m_adj_R2_in`,  " & ",
-    row$`12m_Beta_1sd_bps`," & ", row$`12m_p_FDR`, " & ", row$`12m_adj_R2_in`,
-    " \\\\\n",
-    sep = ""
+# Save the wide panel as LaTeX 
+panel_tex <- panel %>%
+  mutate(predictor = escape_pred(predictor)) %>%
+  rename(
+    `1m β(1sd) bps`   = `1m_Beta_1sd_bps`,
+    `1m q(BH)`        = `1m_p_FDR`,
+    `1m adj R^2`      = `1m_adj_R2_in`,
+    `3m β(1sd) bps`   = `3m_Beta_1sd_bps`,
+    `3m q(BH)`        = `3m_p_FDR`,
+    `3m adj R^2`      = `3m_adj_R2_in`,
+    `6m β(1sd) bps`   = `6m_Beta_1sd_bps`,
+    `6m q(BH)`        = `6m_p_FDR`,
+    `6m adj R^2`      = `6m_adj_R2_in`,
+    `12m β(1sd) bps`  = `12m_Beta_1sd_bps`,
+    `12m q(BH)`       = `12m_p_FDR`,
+    `12m adj R^2`     = `12m_adj_R2_in`
   )
-}
+
+kbl_obj <- knitr::kable(
+  panel_tex,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,
+  caption  = "In-sample predictive regressions (Newey--West; BH-FDR within horizon).",
+  label    = "tab:insample_monthly"
+) |>
+  kableExtra::kable_styling(latex_options = c("hold_position"), font_size = 8) |>
+  kableExtra::add_header_above(c(
+    " " = 1,
+    "1m"  = 3,
+    "3m"  = 3,
+    "6m"  = 3,
+    "12m" = 3
+  ))
+
+kableExtra::save_kable(
+  kbl_obj,
+  file = file.path(TAB_IS, "table_insample_monthly.tex")
+)
+
 
 # ---- 8) IN-SAMPLE (CONDITIONAL on level: VIX) ---------------------------
 
@@ -825,170 +921,42 @@ res_pc1_m <- insample_hh_multi_batch_monthly(M_full, main_preds_m, horizons_mont
     t_main = round(t_main, 2)
   )
 
-print(res_pc1_m, n = nrow(res_pc1_m))
+#save as csv
+readr::write_csv(
+  res_pc1_m,
+  file.path(TAB_IS, "insample_controls_vix_results_long.csv")
+)
 
-# ---- 9) Rolling/expanding betas (monthly) -----------------------------------------
+#save for latex
+tab_ctrl <- res_pc1_m %>%
+  mutate(
+    predictor = main_pred,
+    horizon   = paste0(horizon, "m"),
+    dAIC      = round(dAIC, 2),
+    dBIC      = round(dBIC, 2),
+    t_main    = round(t_main, 2),
+    beta_main_1sd_bps = round(beta_main_1sd_bps, 1)
+  ) %>%
+  select(predictor, horizon, dAIC, dBIC, t_main, beta_main_1sd_bps)
 
-roll_beta_monthly <- function(
-    M,
-    horizons_months = c(1, 3, 6, 12),
-    window_months   = 120,
-    pred            = "skew_ratio_90_100",
-    window_type     = c("rolling", "expanding")
-) {
-  window_type <- match.arg(window_type)
-  
-  purrr::map_dfr(horizons_months, function(h) {
-    
-    y <- M[[paste0("excess_", h, "m")]]
-    x <- M[[pred]]
-    n <- length(y)
-    
-    beta_raw <- se_hac <- sd_x <- sd_y <- rep(NA_real_, n)
-    
-    # window indices helper
-    get_idx <- function(i) {
-      if (window_type == "rolling") {
-        j <- i - window_months + 1
-        if (j < 1) return(NULL)
-        j:i
-      } else {
-        # uses your existing helper
-        get_window_indices(i, window_months, window_type = "expanding")
-      }
-    }
-    
-    for (i in seq_len(n)) {
-      idx <- get_idx(i)
-      if (is.null(idx)) next
-      
-      yi <- y[idx]
-      xi <- x[idx]
-      ok <- is.finite(yi) & is.finite(xi)
-      
-      # keep your existing rule: require full usable window
-      if (sum(ok) < window_months) next
-      
-      yi <- yi[ok]
-      xi <- xi[ok]
-      
-      sd_x[i] <- stats::sd(xi)
-      sd_y[i] <- stats::sd(yi)
-      if (!is.finite(sd_x[i]) || sd_x[i] == 0) next
-      if (!is.finite(sd_y[i]) || sd_y[i] == 0) next
-      
-      fit_i <- stats::lm(yi ~ xi)
-      
-      beta_raw[i] <- stats::coef(fit_i)[2]
-      
-      # Newey-West with lag = h (as you requested)
-      V_i <- sandwich::NeweyWest(
-        fit_i,
-        lag      = h,
-        prewhite = FALSE,
-        adjust   = TRUE
-      )
-      se_hac[i] <- sqrt(pmax(diag(V_i)[2], 0))
-    }
-    
-    # Standardised betas: per 1 SD move in predictor
-    beta_sd <- beta_raw * sd_x
-    se_sd   <- se_hac   * sd_x
-    
-    tibble::tibble(
-      month       = M$month,
-      regime      = M$regime,   # <<< bring regime through
-      horizon     = paste0(h, "m"),
-      pred        = pred,
-      window      = window_months,
-      window_type = window_type,
-      beta_raw    = beta_raw,
-      se_hac      = se_hac,
-      sd_x        = sd_x,
-      sd_y        = sd_y,
-      beta_sd     = beta_sd,
-      se_sd       = se_sd,
-      t_hac       = beta_raw / se_hac
-    )
-  })
-}
+kbl_ctrl <- knitr::kable(
+  tab_ctrl,
+  format   = "latex",
+  booktabs = TRUE,
+  escape   = FALSE,
+  caption  = ,
+  label    = "tab:insample_controls_vix"
+) |>
+  kableExtra::kable_styling(latex_options = c("hold_position"), font_size = 8)
 
-# Build regime spans for shading (contiguous crisis blocks
-
-make_regime_spans <- function(M) {
-  M %>%
-    distinct(month, regime) %>%
-    arrange(month) %>%
-    mutate(
-      regime = as.character(regime),
-      chg = regime != lag(regime, default = first(regime)),
-      grp = cumsum(chg)
-    ) %>%
-    group_by(grp, regime) %>%
-    summarise(
-      start = min(month),
-      end   = max(month),
-      .groups = "drop"
-    ) %>%
-    mutate(end = end %m+% months(1))  # cover the full last month
-}
-
-# rolling betas for selected predictors/windows/horizons
-
-pred_for_beta_m <- c("iv_skew_90_100","log_slope_quad", "skew_ratio_80_110", "skew_ratio_80_120")
-windows_beta_m  <- c(60)
-horizons_beta_m <- c(3, 6, 12)
-
-# WINDOW_TYPE_BETA is set to "rolling" or "expanding"
-betas_all_m <- tidyr::crossing(pred = pred_for_beta_m, window = windows_beta_m) |>
-  purrr::pmap_dfr(function(pred, window) {
-    roll_beta_monthly(
-      M_full,
-      horizons_months = horizons_beta_m,
-      window_months   = window,
-      pred            = pred,
-      window_type     = WINDOW_TYPE_BETA
-    )
-  }) |>
-  dplyr::mutate(
-    pred_label = stringr::str_replace_all(pred, "_", " "),
-    horizon    = factor(horizon, levels = paste0(horizons_beta_m, "m")),
-    window     = factor(window, levels = windows_beta_m,
-                        labels = paste0(windows_beta_m, "-month window"))
-  )
-
-# regime spans (from the full panel)
-regime_spans <- make_regime_spans(M_full)
+kableExtra::save_kable(
+  kbl_ctrl,
+  file = file.path(TAB_IS, "table_insample_controls_vix.tex")
+)
 
 
-# PLOT: beta_sd with crisis shading
 
-fig_beta_sd_m <- betas_all_m |>
-  ggplot2::ggplot(ggplot2::aes(month, beta_sd, colour = horizon, group = horizon)) +
-  
-  # shade crisis periods behind everything
-  ggplot2::geom_rect(
-    data = dplyr::filter(regime_spans, regime == "crisis"),
-    ggplot2::aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
-    inherit.aes = FALSE,
-    alpha = 0.10
-  ) +
-  ggplot2::geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3, alpha = 0.6) +
-  ggplot2::geom_line(na.rm = TRUE, linewidth = 0.8) +
-  ggplot2::facet_wrap(~ pred_label, ncol = 2, scales = "fixed") +
-  ggplot2::labs(
-    x = NULL,
-    y = expression(beta~"(per 1 SD move in predictor)"),
-    colour = "Horizon",
-    fill   = "Horizon"
-  ) +
-  ggplot2::theme_minimal(base_size = 11) +
-  ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
-
-fig_beta_sd_m
-ggsave("fig_roll_beta_60m.png", fig_beta_sd_m, width=8, height=4, dpi=300)
-
-# ---- 10) OOS + Clark West (monthly) --------------------------------------
+# ---- 9) OOS + Clark West (monthly) --------------------------------------
 
 oos_stats_fast_monthly <- function(
     M,
@@ -1049,7 +1017,7 @@ oos_stats_fast_monthly <- function(
   )
 }
 
-# ---- 11) OOS Master Compute of Results (monthly) ------------------------
+# ---- 10) OOS Master Compute of Results (monthly) ------------------------
 
 compute_oos_paths_raw_monthly <- function(
     M,
@@ -1067,7 +1035,7 @@ compute_oos_paths_raw_monthly <- function(
   y <- M[[paste0("excess_", h_months, "m")]]
   X <- as.matrix(M[, pred, drop = FALSE])
   
-  # Your helper for rolling/expanding OLS forecasts
+  # helper for rolling/expanding OLS forecasts
   ols <- get_ols_forecasts(
     y,
     X,
@@ -1127,7 +1095,7 @@ compute_oos_suite_monthly <- function(
   benchmarks  <- match.arg(benchmarks, several.ok = TRUE)
   window_type <- match.arg(window_type)
   
-  # ----- Summary table -----
+  # Summary table
   results_table <- tidyr::crossing(
     predictor     = predictors,
     window_months = windows_months,
@@ -1158,7 +1126,8 @@ compute_oos_suite_monthly <- function(
         beta_avg      = round(o["beta_avg",], 6)
       )
     }) %>%
-    # ---------- MULTIPLE TESTING FIX ----------
+    
+  # MULTIPLE TESTING
   # Heatmap is read "within each horizon" while scanning predictors × windows.
   # So, for each (benchmark, window_type, horizon), adjust across ALL cells
   # in that panel: predictor × window_months.
@@ -1170,7 +1139,7 @@ compute_oos_suite_monthly <- function(
     dplyr::mutate(cw_q_global_bench = bh_adjust(cw_p_raw)) %>%
     dplyr::ungroup() 
   
-  # ----- Cumulative R² paths (unchanged) -----
+  # Cumulative R² paths 
   paths_df <- tidyr::crossing(
     predictor     = predictors,
     window_months = windows_months,
@@ -1201,8 +1170,9 @@ compute_oos_suite_monthly <- function(
   )
 }
 
-# ---- 12) OOS Plots (monthly) --------------------------------------------
+# ---- 11) OOS Plots (monthly) --------------------------------------------
 
+#Function to plot Heatmaps
 plot_heatmap_raw_monthly <- function(results, bm = NULL, alpha_txt = 0.85,
                                      sig_level = 0.10,
                                      p_col = c("cw_q_h", "cw_p_raw"),
@@ -1252,51 +1222,7 @@ plot_heatmap_raw_monthly <- function(results, bm = NULL, alpha_txt = 0.85,
   else             gg + facet_grid(. ~ window_months, labeller = win_lab)
 }
 
-
-
-plot_oos_trend_by_horizon_raw_monthly <- function(results_table,
-                                                  sig_level = 0.10,
-                                                  p_col = c("cw_q_h", "cw_p_raw")) {
-  p_col <- match.arg(p_col)
-  
-  df <- results_table %>%
-    dplyr::mutate(
-      horizon_num   = readr::parse_number(horizon),
-      window_lab    = factor(
-        window_months,
-        levels = sort(unique(window_months)),
-        labels = paste0(sort(unique(window_months)), "m")
-      ),
-      predictor_lab = stringr::str_replace_all(predictor, "_", " "),
-      p_use         = .data[[p_col]],
-      sig           = is.finite(p_use) & (p_use < sig_level) & (R2_oos_raw > 0)
-    )
-  
-  ggplot(
-    df,
-    aes(
-      x      = factor(horizon_num, levels = sort(unique(horizon_num))),
-      y      = R2_oos_raw,
-      group  = window_lab,
-      colour = window_lab
-    )
-  ) +
-    geom_line() +
-    geom_point(aes(shape = sig), size = 2, na.rm = TRUE) +
-    scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1),
-                       guide = "none", na.translate = TRUE) +
-    labs(
-      x      = "Horizon (months)",
-      y      = expression(R[OOS]^2~"(%, raw)"),
-      colour = "Window",
-      title  = "Raw OOS R² vs. horizon (facet = predictor) — Monthly"
-    ) +
-    facet_wrap(~ predictor_lab, scales = "free_y") +
-    theme_minimal(base_size = 11) +
-    theme(strip.text = element_text(face = "bold"))
-}
-
-
+# Function to Plot cumulative r2 through time
 plot_oos_trend_through_time_raw_monthly <- function(paths_df,
                                                     facet_by = c("window", "predictor")) {
   facet_by <- match.arg(facet_by)
@@ -1326,27 +1252,101 @@ plot_oos_trend_through_time_raw_monthly <- function(paths_df,
   }
 }
 
-# ---- 13) Build OOS suite + example plots (monthly) ----------------------
+# ---- 12) Build OOS suite + example plots (monthly) ----------------------
 
-pred_vars_all_m <- c("iv_skew_90_100","log_slope_quad", "skew_ratio_80_110",  "skew_ratio_80_120")
-windows_all_m   <- c(60)
-horizons_all_m  <- c(3,6,12)
-benchmarks_all_m <- BENCHMARK_OOS   # "rolling" or "expanding"
+# 12.1) Expanding OOS Results
 
-oos_all_m <- compute_oos_suite_monthly(
+#Expanding Heatmap
+pred_vars_exp <- c(iv_levels_m, skew_ratio_m, skew_diff_m, wing_m) #choose measure families from Section 4)
+windows_exp   <- c(48,60,72,120) # window months
+horizons_exp  <- c(1,3,6,12) # monthly horizons to plot
+benchmarks_exp <- "expanding"   # expanding mean benchmark
+window_type_exp <- "expanding" # expanding winddow forecasting
+
+oos_all_m_exp <- compute_oos_suite_monthly(
   M_full,
-  predictors      = pred_vars_all_m,
-  windows_months  = windows_all_m,
-  horizons_months = horizons_all_m,
-  benchmarks      = benchmarks_all_m,
-  window_type     = WINDOW_TYPE_OOS
+  predictors      = pred_vars_exp,
+  windows_months  = windows_exp,
+  horizons_months = horizons_exp,
+  benchmarks      = benchmarks_exp,
+  window_type     = window_type_exp
 )
 
-results_table_m <- oos_all_m$results_table
-paths_df_m      <- oos_all_m$paths_df
-print(results_table_m, n = nrow(results_table_m))
-#Robust Variables
-robust_tbl_m <- results_table_m %>%
+results_table_m_exp <- oos_all_m_exp$results_table
+paths_df_m_exp      <- oos_all_m_exp$paths_df
+
+pred_vars_all_heat <- c(iv_levels_m, skew_ratio_m, skew_diff_m, wing_m)
+
+# Generate Expanding Window Heatmap
+fig9_m <- plot_heatmap_raw_monthly(
+  results_table_m_exp,
+  bm = benchmarks_exp,
+  predictor_order = pred_vars_all_heat,
+  sig_level = 0.1,
+  p_col = "cw_q_h"        # <-- family wise multiple adjustment
+)
+
+ggsave(
+  filename = file.path(FIG_HM, "fig9_heatmap_oos_monthly_Expanding.png"),
+  plot     = fig9_m,
+  width    = 12, height = 8, dpi = 300
+)
+
+# Cumulative raw R² through time for key predictor
+fig11_m <- plot_oos_trend_through_time_raw_monthly(
+  paths_df_m_exp %>%
+    dplyr::filter(
+      horizon %in% c("3m","6m","12m"),
+      window_months == 120,
+      benchmark == benchmarks_exp,
+      predictor %in% c("log_slope_quad","skew_ratio_90_120")
+    ),
+  facet_by = "predictor"
+)
+
+ggsave(
+  filename = file.path(FIG_PATH, "fig11_paths_cumR2_monthly_Expanding.png"),
+  plot     = fig11_m,
+  width    = 12, height = 8, dpi = 300
+)
+
+# 12.2) Rolling OOS Results
+
+pred_vars_roll   <- c(iv_levels_m, skew_ratio_m, skew_diff_m, wing_m)
+windows_roll     <- c(48,60,72,120)
+horizons_roll    <- c(3,6,12)
+benchmarks_roll  <- "rolling"
+window_type_roll <- "rolling"
+
+oos_all_m_roll <- compute_oos_suite_monthly(
+  M_full,
+  predictors      = pred_vars_roll,
+  windows_months  = windows_roll,
+  horizons_months = horizons_roll,
+  benchmarks      = benchmarks_roll,
+  window_type     = window_type_roll
+)
+
+results_table_m_roll <- oos_all_m_roll$results_table
+paths_df_m_roll      <- oos_all_m_roll$paths_df
+
+#Plot Rolling Heatmap
+fig12_m_roll <- plot_heatmap_raw_monthly(
+  results_table_m_roll,
+  bm = benchmarks_roll,
+  predictor_order = pred_vars_roll,
+  sig_level = 0.1,
+  p_col = "cw_q_h"
+)
+
+ggsave(
+  filename = file.path(FIG_HM, "fig12_heatmap_oos_monthly_Rolling.png"),
+  plot     = fig12_m_roll,
+  width    = 12, height = 8, dpi = 300
+)
+
+#Robust Variables according to criteria
+results_table_m_roll <- results_table_m_roll %>%
   mutate(
     window_months = as.numeric(window_months),
     pass = (R2_oos_raw > 0) & is.finite(cw_q_h) & (cw_q_h <= 0.10)
@@ -1361,34 +1361,263 @@ robust_tbl_m <- results_table_m %>%
   ) %>%
   filter(robust_adj)
 
-# Heatmap
-pred_vars_all_heat <- c(iv_levels_m, skew_ratio_m, skew_diff_m, wing_m)
+print(results_table_m_roll)
 
-fig13_m <- plot_heatmap_raw_monthly(
-  results_table_m,
-  bm = BENCHMARK_OOS,
-  predictor_order = pred_vars_all_heat,
-  sig_level = 0.1,
-  p_col = "cw_q_h"        # <-- IMPORTANT
-)
-
-#ggsave("fig1_heatmap_exp.png", fig13_m, width=8, height=6, dpi=300)
-
-# Raw R² vs horizon
-fig14_m <- plot_oos_trend_by_horizon_raw_monthly(
-  results_table_m %>% dplyr::filter(benchmark == BENCHMARK_OOS)
-)
-
-# Cumulative raw R² through time for one key predictor
-fig15_m <- plot_oos_trend_through_time_raw_monthly(
-  paths_df_m %>% dplyr::filter(benchmark == BENCHMARK_OOS,
-                               predictor %in% c("iv_skew_90_100","log_slope_quad", "skew_ratio_80_110",  "skew_ratio_80_120")),
+#Plot trended cumulative r2
+fig14_m_roll <- plot_oos_trend_through_time_raw_monthly(
+  paths_df_m_roll %>%
+    dplyr::filter(
+      window_months == 60,
+      window_type   == "rolling",
+      benchmark     == "rolling",
+      predictor %in% c("iv_skew_90_100","log_slope_quad", "skew_ratio_80_110", "skew_ratio_80_120")
+    ),
   facet_by = "predictor"
 )
 
-ggsave("fig_roll_r2_60m.png", fig15_m, width=8, height=4, dpi=300)
+ggsave(
+  filename = file.path(FIG_PATH, "fig14_paths_cumR2_monthly_Rolling.png"),
+  plot     = fig14_m_roll,
+  width    = 12, height = 8, dpi = 300
+)
 
-# ---- 14) Forecast vs benchmark Plot (monthly) ---------------------------
+# ---- 13) Function for Expanding/Rolling betas (monthly) -----------------------------------------
+
+roll_beta_monthly <- function(
+    M,
+    horizons_months = c(1, 3, 6, 12),
+    window_months   = 120,
+    pred            = "skew_ratio_90_100",
+    window_type     = c("rolling", "expanding")
+) {
+  window_type <- match.arg(window_type)
+  
+  purrr::map_dfr(horizons_months, function(h) {
+    
+    y <- M[[paste0("excess_", h, "m")]]
+    x <- M[[pred]]
+    n <- length(y)
+    
+    # Storage vectors (one value per month t)
+    beta_raw <- se_hac <- sd_x <- sd_y <- rep(NA_real_, n)
+    
+    # Window indices helper
+    # IMPORTANT: Use t-1 information only (no look-ahead).
+    get_idx <- function(i) {
+      if (window_type == "rolling") {
+        j <- i - window_months              # <-- no +1; ensures window size == window_months
+        if (j < 1) return(NULL)
+        j:(i - 1)                           # <-- ends at i-1 to avoid peek
+      } else {
+        # Your existing helper already returns 1:(i-1) for expanding
+        get_window_indices(i, window_months, window_type = "expanding")
+      }
+    }
+    
+    for (i in seq_len(n)) {
+      idx <- get_idx(i)
+      if (is.null(idx)) next
+      
+      yi <- y[idx]
+      xi <- x[idx]
+      ok <- is.finite(yi) & is.finite(xi)
+      
+      # Require the full usable window (your rule)
+      if (sum(ok) < window_months) next
+      
+      yi <- yi[ok]
+      xi <- xi[ok]
+      
+      sd_x[i] <- stats::sd(xi)
+      sd_y[i] <- stats::sd(yi)
+      
+      # Skip degenerate windows
+      if (!is.finite(sd_x[i]) || sd_x[i] == 0) next
+      if (!is.finite(sd_y[i]) || sd_y[i] == 0) next
+      
+      # Simple predictive regression: excess return on predictor
+      fit_i <- stats::lm(yi ~ xi)
+      beta_raw[i] <- stats::coef(fit_i)[2]
+      
+      # HAC SE with lag = h 
+      V_i <- sandwich::NeweyWest(
+        fit_i,
+        lag      = h,
+        prewhite = FALSE,
+        adjust   = TRUE
+      )
+      se_hac[i] <- sqrt(pmax(diag(V_i)[2], 0))
+    }
+    
+    # Standardised betas: "effect per 1 SD move in predictor"
+    beta_sd <- beta_raw * sd_x
+    se_sd   <- se_hac   * sd_x
+    
+    tibble::tibble(
+      month       = M$month,
+      regime      = M$regime,     # carry through for shading logic
+      horizon     = paste0(h, "m"),
+      pred        = pred,
+      window      = window_months,
+      window_type = window_type,
+      beta_raw    = beta_raw,
+      se_hac      = se_hac,
+      sd_x        = sd_x,
+      sd_y        = sd_y,
+      beta_sd     = beta_sd,
+      se_sd       = se_sd,
+      t_hac       = beta_raw / se_hac
+    )
+  })
+}
+
+# Build  regime spans for shading
+# This converts month-by-month regime labels into start/end blocks
+# so we can shade entire crisis intervals in the background.
+make_regime_spans <- function(M) {
+  M %>%
+    dplyr::distinct(month, regime) %>%
+    dplyr::arrange(month) %>%
+    dplyr::mutate(
+      regime = as.character(regime),
+      chg    = regime != dplyr::lag(regime, default = dplyr::first(regime)),
+      grp    = cumsum(chg)
+    ) %>%
+    dplyr::group_by(grp, regime) %>%
+    dplyr::summarise(
+      start   = min(month),
+      end     = max(month),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      # Extend rectangle to cover the whole final month (simple & robust)
+      end = end + 31
+    )
+}
+
+# - Plot function with a "shade_regimes" switch 
+plot_beta_sd_monthly <- function(
+    betas_df,
+    regime_spans = NULL,
+    shade_regimes = TRUE,
+    shade_alpha = 0.10,
+    shade_regime_value = "crisis"   # lets you shade "crisis" (default) or "calm"
+) {
+  p <- ggplot2::ggplot(
+    betas_df,
+    ggplot2::aes(month, beta_sd, colour = horizon, group = horizon)
+  )
+  
+  # Optional shading layer
+  if (isTRUE(shade_regimes)) {
+    if (is.null(regime_spans)) {
+      stop("shade_regimes=TRUE but regime_spans is NULL.", call. = FALSE)
+    }
+    
+    p <- p + ggplot2::geom_rect(
+      data = dplyr::filter(regime_spans, regime == shade_regime_value),
+      ggplot2::aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+      inherit.aes = FALSE,
+      alpha = shade_alpha
+    )
+  }
+  
+  p +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
+                        linewidth = 0.3, alpha = 0.6) +
+    ggplot2::geom_line(na.rm = TRUE, linewidth = 0.8) +
+    ggplot2::facet_wrap(~ pred_label, ncol = 2, scales = "fixed") +
+    ggplot2::labs(
+      x = NULL,
+      y = expression(beta~"(per 1 SD move in predictor)"),
+      colour = "Horizon"
+    ) +
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
+}
+
+
+# ---- 14) Plotting Expanding/Rolling Beta -------------------------------------
+
+# 14.1) Expanding Beta
+
+pred_for_beta_m_exp <- c("log_slope_quad", "skew_ratio_90_120")
+windows_beta_m_exp  <- c(120)
+horizons_beta_m_exp <- c(3, 6, 12)
+window_type_beta_exp <- "expanding"
+
+betas_all_m_exp <- tidyr::crossing(pred = pred_for_beta_m_exp,
+                                   window = windows_beta_m_exp) %>%
+  purrr::pmap_dfr(function(pred, window) {
+    roll_beta_monthly(
+      M               = M_full,
+      horizons_months = horizons_beta_m_exp,
+      window_months   = window,
+      pred            = pred,
+      window_type     = window_type_beta_exp
+    )
+  }) %>%
+  dplyr::mutate(
+    pred_label = stringr::str_replace_all(pred, "_", " "),
+    horizon    = factor(horizon, levels = paste0(horizons_beta_m_exp, "m")),
+    window     = factor(window, levels = windows_beta_m_exp,
+                        labels = paste0(windows_beta_m_exp, "-month window"))
+  )
+
+exp_beta_120m <- plot_beta_sd_monthly(
+  betas_df      = betas_all_m_exp,
+  shade_regimes = FALSE
+)
+
+ggsave(
+  filename = file.path(FIG_BETA, "beta_expanding_120m.png"),
+  plot     = exp_beta_120m,
+  width    = 8, height = 4, dpi = 300
+)
+
+# 14.2) Rolling Beta
+
+pred_for_beta_m_roll <- c("iv_skew_90_100","log_slope_quad","skew_ratio_80_110","skew_ratio_80_120")
+windows_beta_m_roll  <- c(60)
+horizons_beta_m_roll <- c(3, 6, 12)
+window_type_beta_roll <- "rolling"
+
+betas_all_m_roll <- tidyr::crossing(pred = pred_for_beta_m_roll,
+                                    window = windows_beta_m_roll) %>%
+  purrr::pmap_dfr(function(pred, window) {
+    roll_beta_monthly(
+      M               = M_full,
+      horizons_months = horizons_beta_m_roll,
+      window_months   = window,
+      pred            = pred,
+      window_type     = window_type_beta_roll
+    )
+  }) %>%
+  dplyr::mutate(
+    pred_label = stringr::str_replace_all(pred, "_", " "),
+    horizon    = factor(horizon, levels = paste0(horizons_beta_m_roll, "m")),
+    window     = factor(window, levels = windows_beta_m_roll,
+                        labels = paste0(windows_beta_m_roll, "-month window"))
+  )
+
+regime_spans <- make_regime_spans(M_full)
+
+roll_beta_60m <- plot_beta_sd_monthly(
+  betas_df            = betas_all_m_roll,
+  regime_spans        = regime_spans,
+  shade_regimes       = TRUE,
+  shade_alpha         = 0.10,
+  shade_regime_value  = "crisis"
+)
+
+ggsave(
+  filename = file.path(FIG_BETA, "beta_rolling_60m.png"),
+  plot     = roll_beta_60m,
+  width    = 8, height = 4, dpi = 300
+)
+
+
+# ---- 15) NOot for main use: (visual show of forecast vs benchmark) ---------------------------
 
 plot_oos_vs_benchmark_monthly <- function(
     M,
@@ -1453,24 +1682,20 @@ plot_oos_vs_benchmark_monthly <- function(
     theme(legend.position = "top")
 }
 
-# Example: keep your original illustrative plots
-fig16m_roll <- plot_oos_vs_benchmark_monthly(
-  M_full, h_months = 12, window_months = 12,
-  pred_vars = "iv_skew_80_120",
-  benchmark = "rolling",
-  window_type = "rolling"
-)
+# Example: 60m rolling window for 12m returns
+#fig16m_roll <- plot_oos_vs_benchmark_monthly(
+ # M_full, h_months = 12, window_months = 60,
+ # pred_vars = "skew_ratio_80_120",
+ # benchmark = "rolling",
+ # window_type = "rolling"
+#)
 
-fig16m_exp  <- plot_oos_vs_benchmark_monthly(
-  M_full, h_months = 12, window_months = 12,
-  pred_vars = "skew_ratio_80_120",
-  benchmark = "expanding",
-  window_type = "expanding"
-)
+# Example: 120m expanding window for 12m returns
+#fig16m_exp  <- plot_oos_vs_benchmark_monthly(
+#  M_full, h_months = 12, window_months = 120,
+ # pred_vars = "log_slope_quad",
+  #benchmark = "expanding",
+ # window_type = "expanding"
+#)
 
-# ---- Final figure prints (optional) --------------------------------------
-print(fig1_main); print(fig2_main); print(figA2_appx); print(fig3_main); print(fig4_main)
-print(fig5a_main); print(fig5b_main)
-purrr::walk(fig6_m, print); purrr::walk(fig7_m, print)
-print(fig13_m); print(fig14_m); print(fig15_m)
-print(fig16m_roll); print(fig16m_exp)
+
