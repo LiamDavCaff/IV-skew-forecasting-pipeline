@@ -1,11 +1,11 @@
 # ===========================================================
 #  Monthly Forecasting Pipeline (1m, 3m, 6m, 12m)
-#  EDA → IS → IS|Level → Rolling Beta → OOS (Clark West)
+#  EDA → IS → IS|Level →  OS (Clark West) →  Rolling Beta
 #  - Monthly panel cached once
 #  - Rolling / Expanding OLS via helper
 #  - Benchmark via rolling / expanding mean
 #  - Clark–West test
-#  - NH adjustment for multiple testing
+#  - BH adjustment for multiple testing
 # ===========================================================
 
 # ---- 0) Packages ---------------------------------------------------------
@@ -365,11 +365,6 @@ wing_m        <- c("wing_slope","wing_curve","skew_slope_quad","skew_curve_quad"
 implied_m     <- c("iv_imp_1m","var_imp_1m")
 premia_m      <- c("vol_prem_1m","var_prem_1m")
 valuation_macro_m <- c("log_ep","log_bm","t3m_yield","lty_yield","term_spread","inflation_yoy")
-
-# ---- 4b) Global Config for Forecasting -----------------------------------
-
-WINDOW_TYPE_BETA <- "rolling"   # "rolling" or "expanding" for rolling betas
-
 
 # ---- 5) Build monthly panel (cache once) --------------------------------
 
@@ -1289,7 +1284,7 @@ fig9_m <- plot_heatmap_raw_monthly(
 ggsave(
   filename = file.path(FIG_HM, "fig9_heatmap_oos_monthly_Expanding.png"),
   plot     = fig9_m,
-  width    = 12, height = 8, dpi = 300
+  width    = 8, height = 4.5, dpi = 300
 )
 
 # Cumulative raw R² through time for key predictor
@@ -1307,7 +1302,7 @@ fig11_m <- plot_oos_trend_through_time_raw_monthly(
 ggsave(
   filename = file.path(FIG_PATH, "fig11_paths_cumR2_monthly_Expanding.png"),
   plot     = fig11_m,
-  width    = 12, height = 8, dpi = 300
+  width    = 8, height = 4.5, dpi = 300
 )
 
 # 12.2) Rolling OOS Results
@@ -1342,7 +1337,7 @@ fig12_m_roll <- plot_heatmap_raw_monthly(
 ggsave(
   filename = file.path(FIG_HM, "fig12_heatmap_oos_monthly_Rolling.png"),
   plot     = fig12_m_roll,
-  width    = 12, height = 8, dpi = 300
+  width    = 8, height = 4.5, dpi = 300
 )
 
 #Robust Variables according to criteria
@@ -1361,8 +1356,6 @@ results_table_m_roll <- results_table_m_roll %>%
   ) %>%
   filter(robust_adj)
 
-print(results_table_m_roll)
-
 #Plot trended cumulative r2
 fig14_m_roll <- plot_oos_trend_through_time_raw_monthly(
   paths_df_m_roll %>%
@@ -1378,7 +1371,7 @@ fig14_m_roll <- plot_oos_trend_through_time_raw_monthly(
 ggsave(
   filename = file.path(FIG_PATH, "fig14_paths_cumR2_monthly_Rolling.png"),
   plot     = fig14_m_roll,
-  width    = 12, height = 8, dpi = 300
+  width    = 8, height = 4.5, dpi = 300
 )
 
 # ---- 13) Function for Expanding/Rolling betas (monthly) -----------------------------------------
@@ -1617,7 +1610,7 @@ ggsave(
 )
 
 
-# ---- 15) NOot for main use: (visual show of forecast vs benchmark) ---------------------------
+# ---- 15) Not for main use: (visual show of forecast vs benchmark) ---------------------------
 
 plot_oos_vs_benchmark_monthly <- function(
     M,

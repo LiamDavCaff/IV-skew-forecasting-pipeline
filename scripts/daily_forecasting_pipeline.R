@@ -1,10 +1,10 @@
 # ===========================================================
-#  Daily Forecasting Pipeline (1m, 3m, 6m, 12m)
-#  EDA → IS → IS|Level → Rolling Beta → OOS (Clark West)
+#  Daily Forecasting Pipeline 
 #  - Daily panel cached once
 #  - Rolling / Expanding OLS via helper
 #  - Benchmark via rolling / expanding mean
 #  - Clark–West test
+#  - Multiple-testing correction using BH
 # ===========================================================
 
 # ---- 0) Packages ---------------------------------------------------------
@@ -30,10 +30,26 @@ suppressPackageStartupMessages({
 if (!requireNamespace("roll", quietly = TRUE)) install.packages("roll")
 library(roll)
 
+
+# ---- 0.1) Output folders ------------------------------------------------------
+
+FIG_DAILY <- file.path("outputs", "daily", "figures")
+dir.create(FIG_DAILY, recursive = TRUE, showWarnings = FALSE)
+
 # ---- 1) Load data --------------------------------------------------------
 
 # Update path if needed:
-data <- readRDS("C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/spx_iv_modelling_data.rds")
+DATA_FILE <- file.path("data", "bbg_spx_data.rds")
+
+if (!file.exists(DATA_FILE)) {
+  stop(
+    paste0("Missing ", DATA_FILE, ".\n",
+           "Place the file in the repo's data/ folder (it stays local / ignored)."),
+    call. = FALSE
+  )
+}
+
+data <- readRDS(DATA_FILE)
 stopifnot("date" %in% names(data))
 
 # ---- 2) Helpers ----------------------------------------------------------
@@ -142,7 +158,7 @@ bh_adjust <- function(p) {
   out
 }
 
-# ---- 3) Monthly panel (predictors + targets) ----------------------------
+# ---- 3) Daily panel (predictors + targets) ----------------------------
 
 # Build month-end panel from daily data, including RF accrual timing
 
@@ -281,7 +297,7 @@ add_pc1_to_daily <- function(D) {
   dplyr::mutate(D, pc1 = pc1)
 }
 
-# ---- 4) Measure families (monthly) --------------------------------------
+# ---- 4) Measure families (daily) --------------------------------------
 iv_levels_d   <- c("iv_80","iv_90","iv_100","iv_110","iv_120","vix_ann")
 realised_d    <- c("var_1m_mth","rv_1m_mth")
 skew_diff_d   <- c("iv_skew_80_100","iv_skew_80_110","iv_skew_80_120",
@@ -292,12 +308,6 @@ wing_d        <- c("wing_slope","wing_curve","skew_slope_quad","skew_curve_quad"
 implied_d     <- c("iv_imp_1m","var_imp_1m")
 premia_d      <- c("vol_prem_1m","var_prem_1m")
 valuation_macro_d <- c("log_ep","log_bm","t3m_yield","lty_yield","term_spread","inflation_yoy")
-
-# ---- 4b) Global Config for Forecasting -----------------------------------
-
-WINDOW_TYPE_BETA <- "rolling"   # "rolling" or "expanding" for rolling betas
-WINDOW_TYPE_OOS  <- "rolling"   # "rolling" or "expanding" for OOS regression
-BENCHMARK_OOS    <- "rolling"   # "rolling" or "expanding" for benchmark mean
 
 # ---- 5) Build daily panel (cache once) --------------------------------
 
@@ -310,7 +320,7 @@ d_pct <- D_full %>% mutate(across(starts_with("iv_"), ~ . * 100),
                            vix_ann = vix_ann * 100)
 
 
-# ---- 6) OOS + Clark West (monthly) --------------------------------------
+# ---- 6) OOS + Clark West (daily) --------------------------------------
 
 oos_stats_fast_daily <- function(
     D,
@@ -511,7 +521,7 @@ compute_oos_suite_daily <- function(
 }
 
 
-# ---- 8) OOS Plots (monthly) --------------------------------------------
+# ---- 8) OOS Plots (daily) --------------------------------------------
 
 plot_heatmap_raw_daily <- function(results, bm = NULL, alpha_txt = 0.85,
                                    sig_level = 0.10,
@@ -563,49 +573,6 @@ plot_heatmap_raw_daily <- function(results, bm = NULL, alpha_txt = 0.85,
 }
 
 
-plot_oos_trend_by_horizon_raw_daily <- function(results_table,
-                                                sig_level = 0.10,
-                                                p_col = c("cw_q_h", "cw_p_raw")) {
-  p_col <- match.arg(p_col)
-  
-  df <- results_table %>%
-    dplyr::mutate(
-      horizon_num   = readr::parse_number(horizon),
-      window_lab    = factor(
-        window_days,
-        levels = sort(unique(window_days)),
-        labels = paste0(sort(unique(window_days)), "d")
-      ),
-      predictor_lab = stringr::str_replace_all(predictor, "_", " "),
-      p_use         = .data[[p_col]],
-      sig           = is.finite(p_use) & (p_use < sig_level) & (R2_oos_raw > 0)
-    )
-  
-  ggplot(
-    df,
-    aes(
-      x      = factor(horizon_num, levels = sort(unique(horizon_num))),
-      y      = R2_oos_raw,
-      group  = window_lab,
-      colour = window_lab
-    )
-  ) +
-    geom_line() +
-    geom_point(aes(shape = sig), size = 2, na.rm = TRUE) +
-    scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1),
-                       guide = "none", na.translate = TRUE) +
-    labs(
-      x      = "Horizon (days)",
-      y      = expression(R[OOS]^2~"(%, raw)"),
-      colour = "Window",
-      title  = "Raw OOS R² vs. horizon (facet = predictor) — Daily"
-    ) +
-    facet_wrap(~ predictor_lab, scales = "free_y") +
-    theme_minimal(base_size = 11) +
-    theme(strip.text = element_text(face = "bold"))
-}
-
-
 plot_oos_trend_through_time_raw_daily <- function(paths_df,
                                                   facet_by = c("window", "predictor")) {
   facet_by <- match.arg(facet_by)
@@ -637,129 +604,75 @@ plot_oos_trend_through_time_raw_daily <- function(paths_df,
   }
 }
 
-# ---- 9) Build OOS suite + example plots (monthly) ----------------------
+# ---- 9) Build OOS  plots (daily) ----------------------
 
-pred_vars_all_d  <- c("iv_skew_90_100" , "log_slope_quad", "skew_ratio_80_110", "skew_ratio_80_120")
-windows_all_d    <- c(1008, 1260, 1512, 2520)
-horizons_all_d   <- c(1,5,21,63,126,252)
-benchmarks_all_d <- BENCHMARK_OOS
+# 9.1 Expanding OOS result
 
-oos_all_d <- compute_oos_suite_daily(
+pred_vars_exp_d  <- c("skew_ratio_90_120", "log_slope_quad")
+windows_exp_d    <- c(1008, 1260, 1512, 2520)
+horizons_exp_d   <- c(1,5,21,63,126,252)
+benchmarks_exp_d <- "expanding"
+window_type_exp  <- "expanding"
+
+oos_all_exp_d <- compute_oos_suite_daily(
   D_full,
-  predictors    = pred_vars_all_d,
-  windows_days  = windows_all_d,
-  horizons_days = horizons_all_d,
-  benchmarks    = benchmarks_all_d,
-  window_type   = WINDOW_TYPE_OOS
+  predictors    = pred_vars_exp_d,
+  windows_days  = windows_exp_d,
+  horizons_days = horizons_exp_d,
+  benchmarks    = benchmarks_exp_d,
+  window_type   = window_type_exp
 )
 
-results_table_d <- oos_all_d$results_table
-paths_df_d      <- oos_all_d$paths_df
-#print(results_table_d, n = nrow(results_table_d))
+results_table_exp_d <- oos_all_exp_d$results_table
+paths_df_exp_d     <- oos_all_exp_d$paths_df
 
-# Heatmap
-fig_heat_d <- plot_heatmap_raw_daily(
-  results_table_d,
-  bm = benchmarks_all_d,
-  predictor_order = pred_vars_all_d,
+# Expanding Heatmap
+fig15_d <- plot_heatmap_raw_daily(
+  results_table_exp_d,
+  bm = benchmarks_exp_d,
+  predictor_order = pred_vars_exp_d,
   sig_level = 0.10,
   p_col = "cw_q_h"     # <-- FDR-corrected significance
 )
 
-ggsave("fig_roll_heatmap_d.png", fig_heat_d, width=8, height=4.5, dpi=300)
+ggsave(
+  filename = file.path(FIG_DAILY, "fig15_heatmap_oos_monthly_Expanding_Daily.png"),
+  plot     = fig15_d,
+  width    = 8, height = 4.5, dpi = 300
+)
 
-# Raw R² vs horizon
-fig_r2_vs_h_d <- plot_oos_trend_by_horizon_raw_daily(
-  results_table_d %>% dplyr::filter(benchmark == benchmarks_all_d),
+# 9.2 Rolling OOS result
+
+pred_vars_roll_d  <- c("iv_skew_90_100", "log_slope_quad", "skew_ratio_80_110", "skew_ratio_80_120")
+windows_roll_d    <- c(1008, 1260, 1512, 2520)
+horizons_roll_d   <- c(1,5,21,63,126,252)
+benchmarks_roll_d <- "rolling"
+window_type_roll  <- "rolling"
+
+oos_all_roll_d <- compute_oos_suite_daily(
+  D_full,
+  predictors    = pred_vars_roll_d,
+  windows_days  = windows_roll_d,
+  horizons_days = horizons_roll_d,
+  benchmarks    = benchmarks_roll_d,
+  window_type   = window_type_roll
+)
+
+results_table_roll_d <- oos_all_roll_d$results_table
+paths_df_roll_d      <- oos_all_roll_d$paths_df
+
+# Expanding Heatmap
+fig16_d <- plot_heatmap_raw_daily(
+  results_table_roll_d,
+  bm = benchmarks_roll_d,
+  predictor_order = pred_vars_roll_d,
   sig_level = 0.10,
   p_col = "cw_q_h"     # <-- FDR-corrected significance
 )
 
-# Cumulative R² through time for one key predictor
-fig_cumR2_d <- plot_oos_trend_through_time_raw_daily(
-  paths_df_d %>% dplyr::filter(benchmark == benchmarks_all_d,
-                               predictor %in% c("skew_ratio_80_120")),
-  facet_by = "predictor"
+ggsave(
+  filename = file.path(FIG_DAILY, "fig16_heatmap_oos_monthly_Rolling_Daily.png"),
+  plot     = fig16_d,
+  width    = 8, height = 4.5, dpi = 300
 )
 
-# ---- 10) Forecast vs benchmark Plot (monthly) ---------------------------
-
-plot_oos_vs_benchmark_daily <- function(
-    D,
-    h_days      = 21,
-    window_days = 252,
-    pred_vars   = "skew_ratio_90_100",
-    benchmark   = c("rolling","expanding"),
-    window_type = c("rolling","expanding")
-) {
-  benchmark   <- match.arg(benchmark)
-  window_type <- match.arg(window_type)
-  
-  y_col <- paste0("excess_", h_days, "d")
-  
-  fc_df <- D %>%
-    dplyr::select(date, actual = dplyr::all_of(y_col)) %>%
-    dplyr::mutate(
-      hist_mean = if (benchmark == "rolling")
-        roll_mean_lag1(actual, window_days)
-      else
-        exp_mean_lag1(actual),
-      forecast  = NA_real_
-    )
-  
-  usable <- which(is.finite(fc_df$actual))
-  for (i in usable) {
-    idx <- get_window_indices(i, window_days, window_type = window_type)
-    if (is.null(idx)) next
-    if (length(idx) < window_days) next
-    
-    fit <- lm(stats::reformulate(pred_vars, y_col), data = D[idx, ])
-    fc_df$forecast[i] <- predict(fit, newdata = D[i, , drop = FALSE])
-  }
-  
-  fc_long <- tidyr::pivot_longer(
-    fc_df, c(actual, hist_mean, forecast),
-    names_to = "series", values_to = "value"
-  ) %>%
-    dplyr::mutate(series = factor(series, levels = c("actual", "hist_mean", "forecast")))
-  
-  bm_label <- if (benchmark == "rolling")
-    paste0("Rolling mean (", window_days, "d)")
-  else
-    paste0("Expanding mean (", window_days, "d)")
-  
-  ggplot(fc_long, aes(x = date, y = value, colour = series)) +
-    geom_line(linewidth = 0.6, na.rm = TRUE) +
-    scale_colour_manual(
-      name   = NULL,
-      breaks = c("actual", "hist_mean", "forecast"),
-      values = c(actual = "black", hist_mean = "steelblue", forecast = "firebrick"),
-      labels = c("Actual", bm_label, paste(pred_vars, collapse = " + "))
-    ) +
-    labs(
-      title = sprintf(
-        "%s-Day Excess-Return Forecast — %s window %s vs %s benchmark",
-        h_days, window_type, window_days, benchmark
-      ),
-      y = "Log excess return", x = NULL
-    ) +
-    theme_minimal(base_size = 11) +
-    theme(legend.position = "top")
-}
-
-# Example
-fig_forecast_d <- plot_oos_vs_benchmark_daily(
-  D_full,
-  h_days      = 252,
-  window_days = 1512,
-  pred_vars   = "log_slope_quad",
-  benchmark   = "rolling",
-  window_type = "rolling"
-)
-
-# ---- Final figure prints (optional) --------------------------------------
-print(fig1_main); print(fig2_main); print(figA2_appx); print(fig3_main); print(fig4_main)
-print(fig5a_main); print(fig5b_main)
-purrr::walk(fig6_m, print); purrr::walk(fig7_m, print)
-print(fig13_m); print(fig14_m); print(fig15_m)
-print(fig16m_roll); print(fig16m_exp)

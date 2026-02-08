@@ -1,5 +1,5 @@
 ############################################################
-# MULTI-INDEX IV SKEW OOS FORECASTING WITH AUTO-ALIGNED DATES
+# MULTI-INDEX IV SKEW OOS FORECASTING WITH COMMON START DATE
 # ------------------------------------------------------------
 # - Uses full monthly builder (all IV composites, macro, wings)
 # - Computes IV coverage (80–120%)
@@ -12,39 +12,7 @@
 #   -> significance = (q_BH <= FDR_LEVEL) & (R2 > 0)
 ############################################################
 
-
-###########################
-# 0) USER SETTINGS
-###########################
-
-PREDICTORS_CROSS <- c( "skew_ratio_80_120", "skew_ratio_80_110","log_slope_quad")
-WINDOWS_MONTHS   <- c(60)
-HORIZONS_MONTHS  <- c(1, 3, 6, 12)
-
-BENCHMARK_TYPE   <- "rolling"   # "rolling" or "expanding"
-WINDOW_TYPE_OOS  <- "rolling"   # "rolling" or "expanding"
-MIN_FORECASTS    <- 12            # min number of OOS points required
-
-FDR_LEVEL        <- 0.1          # BH FDR threshold used for significance marking
-
-# ---- Paths to RDS files ----
-INDEX_FILES <- c(
-  SPX    = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/spx_iv_modelling_data.rds",
-  FTSE   = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/ftse_iv_modelling_data.rds",
-  DAX    = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/dax_iv_modelling_data.rds",
-  ASX    = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/asx_iv_modelling_data.rds",
-  ESTOX  = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/eurostox_iv_modelling_data.rds",
-  KOSPI  = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/kospi_iv_modelling_data.rds",
-  NASDQ  = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/nasdaq_iv_modelling_data.rds",
-  NIFTY  = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/nifty_iv_modelling_data.rds",
-  NIKKEI = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/nikkei_iv_modelling_data.rds",
-  SMI    = "C:/Users/Liam/Documents/Dissertation/3. Code/2. Data/2. Data Sets for Modelling/smi_iv_modelling_data.rds"
-)
-
-
-###########################
-# 1) PACKAGES
-###########################
+# ---- 0) Packages ---------------------------------------------------------
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -63,9 +31,40 @@ suppressPackageStartupMessages({
 })
 
 
-############################################################
-# 2) SMALL HELPERS
-############################################################
+# ---- 0.1) Output folders -----------------------------------------------------
+
+OUT_FIG_XM <- file.path("outputs", "cross_market", "figures")
+OUT_TAB_XM <- file.path("outputs", "cross_market", "appendix")
+
+dir.create(OUT_FIG_XM, recursive = TRUE, showWarnings = FALSE)
+dir.create(OUT_TAB_XM, recursive = TRUE, showWarnings = FALSE)
+
+# ---- 1) load data -----------------------------------------------------------
+INDEX_KEYS <- c("SPX","FTSE","DAX","ASX","ESTOX","KOSPI","NASDAQ","NIFTY","NIKKEI","SMI")
+
+# Default naming convention: data/bbg_<lowercase key>_data.rds
+INDEX_PATHS <- setNames(
+  file.path("data", paste0("bbg_", tolower(INDEX_KEYS), "_data.rds")),
+  INDEX_KEYS
+)
+
+# Fail fast if missing
+missing <- INDEX_PATHS[!file.exists(INDEX_PATHS)]
+if (length(missing) > 0) {
+  stop(
+    paste0(
+      "Missing cross-market data files in /data:\n",
+      paste(names(missing), "->", missing, collapse = "\n")
+    ),
+    call. = FALSE
+  )
+}
+
+# Optional: read all into memory (used by coverage step)
+INDEX_LIST <- purrr::map(INDEX_PATHS, readRDS)
+
+# ---- 2) Helpers ----------------------------------------------------------
+
 
 last_non_na <- function(x) {
   y <- x[!is.na(x)]
@@ -117,9 +116,7 @@ bh_adjust <- function(p) {
 }
 
 
-############################################################
-# 3) FULL DAILY → MONTHLY BUILDER (YOUR VERSION)
-############################################################
+# ---- 3) Prepare Monthly Panel -----------------------------------------------------------
 
 prepare_monthly_for_forecasting <- function(df_daily,
                                             date_col  = "date",
@@ -259,11 +256,9 @@ prepare_monthly_for_forecasting <- function(df_daily,
 }
 
 
-############################################################
-# 4) COVERAGE CHECK & COMMON START MONTH
-############################################################
+# ---- 4) Coverage Check & Common Start Date --------------------------------------
 
-INDEX_LIST <- lapply(INDEX_FILES, readRDS)
+INDEX_LIST <- purrr::map(INDEX_PATHS, readRDS)
 
 iv_cols <- c("80%", "90%", "100%", "110%", "120%")
 
@@ -310,9 +305,7 @@ COMMON_START_MONTH <- floor_date(latest_first_full, "month")
 message(">>> COMMON_START_MONTH = ", COMMON_START_MONTH)
 
 
-############################################################
-# 5) ADD EXCESS RETURNS + MONTHLY BUILDER WITH TRUNCATION
-############################################################
+# ---- 5) Add Excess Returns ------------------------------------------------------
 
 add_excess_returns_monthly <- function(M, horizons_months = c(1, 3, 6, 12)) {
   out    <- M
@@ -327,6 +320,9 @@ add_excess_returns_monthly <- function(M, horizons_months = c(1, 3, 6, 12)) {
   out
 }
 
+
+# ---- 6) Function to Create Monthly Panel for Index ------------------------------
+
 build_monthly_for_index <- function(df_daily,
                                     common_start_month = COMMON_START_MONTH,
                                     horizons_months    = HORIZONS_MONTHS) {
@@ -336,10 +332,7 @@ build_monthly_for_index <- function(df_daily,
     dplyr::filter(month >= common_start_month)
 }
 
-
-############################################################
-# 6) OOS FORECASTER
-############################################################
+# ---- 7) OOS forecasting for 1 index ---------------------------------------------
 
 get_ols_forecasts_univariate <- function(y, x, h_months, window_months, window_type) {
   n      <- length(y)
@@ -416,9 +409,7 @@ oos_stats_one_index <- function(M,
 }
 
 
-############################################################
-# 7) RUN FORECASTS ACROSS ALL INDICES
-############################################################
+# ---- 8) Run Forecasts Across All Indices ----------------------------------------
 
 run_oos_across_indices <- function(index_files, predictor,
                                    windows_months, horizons_months,
@@ -459,11 +450,8 @@ run_oos_across_indices <- function(index_files, predictor,
       })
   })
 }
-
-
-############################################################
-# 8) HEATMAP FUNCTION (AUTO PRETTY FACET LABELS)
-############################################################
+ 
+# ---- 9) Create Heatmap ----------------------------------------------------------
 
 plot_heatmap_indices_both <- function(results_both,
                                       predictors_cross,
@@ -532,47 +520,53 @@ plot_heatmap_indices_both <- function(results_both,
 }
 
 
-############################################################
-# 9) EXECUTE FULL PIPELINE + BH ADJUSTMENT + PLOT
-############################################################
+# ---- 10) Expanding Window Results ------------------------------
 
-results_both <- purrr::map_dfr(PREDICTORS_CROSS, function(pred) {
+PREDICTORS_CROSS_EXP <- c("log_slope_quad", "skew_ratio_90_120")
+WINDOWS_MONTHS_EXP   <- c(120)
+HORIZONS_MONTHS_EXP  <- c(1, 3, 6, 12)
+
+BENCHMARK_TYPE_EXP   <- "expanding"   
+WINDOW_TYPE_OOS_EXP  <- "expanding"   
+MIN_FORECASTS    <- 12            # min number of OOS points required
+FDR_LEVEL        <- 0.1          # BH FDR threshold used for significance marking
+
+results_exp <- purrr::map_dfr(PREDICTORS_CROSS_EXP, function(pred) {
   run_oos_across_indices(
-    index_files     = INDEX_FILES,
+    index_files     = INDEX_PATHS,
     predictor       = pred,
-    windows_months  = WINDOWS_MONTHS,
-    horizons_months = HORIZONS_MONTHS,
-    benchmark       = BENCHMARK_TYPE,
-    window_type     = WINDOW_TYPE_OOS,
+    windows_months  = WINDOWS_MONTHS_EXP,
+    horizons_months = HORIZONS_MONTHS_EXP,
+    benchmark       = BENCHMARK_TYPE_EXP,
+    window_type     = WINDOW_TYPE_OOS_EXP,
     min_points      = MIN_FORECASTS
   )
 })
 
-# ---------- MULTIPLE TESTING FIX (same logic as your monthly suite) ----------
+# MULTIPLE TESTING  (same logic as your monthly suite
 # Within each (benchmark, window_type, horizon) slice, adjust CW p-values
 # across all indices × predictors × windows in that slice.
-results_both <- results_both %>%
+results_exp <- results_exp %>%
   group_by(benchmark, window_type, window_months, predictor,horizon) %>%
   mutate(cw_q_h = bh_adjust(cw_p_raw)) %>%
   ungroup()
 
-print(results_both, n = nrow(results_both))
 
-fig_cross_both <- plot_heatmap_indices_both(
-  results_both,
-  predictors_cross = PREDICTORS_CROSS,
+fig17_cross_exp <- plot_heatmap_indices_both(
+  results_exp,
+  predictors_cross = PREDICTORS_CROSS_EXP,
   fdr_level = FDR_LEVEL
 )
 
-print(fig_cross_both)
+ggsave(
+  filename = file.path(OUT_FIG_XM, "fig17_cross_heatmap_expanding.png"),
+  plot     = fig17_cross_exp,
+  width    = 8, height = 4.5, dpi = 300
+)
 
-# Optional save
-ggsave("cross_market_roll_heatmap.png", fig_cross_both, width = 8, height = 4, dpi = 300)
+#Appendix for significant results
 
-
-#Table for significance
-
-sig_report <- results_both %>%
+sig_report_exp <- results_exp %>%
   mutate(signif_flag = is.finite(cw_q_h) & (cw_q_h <= FDR_LEVEL) & (R2_oos_raw > 0)) %>%
   filter(signif_flag) %>%
   transmute(
@@ -583,17 +577,23 @@ sig_report <- results_both %>%
   ) %>%
   arrange(predictor, horizon, desc(R2_oos))
 
-print(sig_report, n = nrow(sig_report))
-
 h_levels <- c("1m","3m","6m","12m")
 
-sig_pretty <- sig_report %>%
+sig_exp <- sig_report_exp %>%
   mutate(cell = sprintf("R2=%.1f, b=%.3f, q=%.3f", R2_oos, beta_avg, q_BH)) %>%
   select(index, predictor, window_months, horizon, cell) %>%
   tidyr::pivot_wider(names_from = horizon, values_from = cell) %>%
   dplyr::select(index, predictor, window_months, dplyr::any_of(h_levels))
 
-sig_pretty
+TabC4 <- knitr::kable(
+  sig_exp,
+  format    = "latex",
+  booktabs  = TRUE,
+  longtable = TRUE,
+  escape    = TRUE   
+)
+
+writeLines(TabC4, file.path(OUT_TAB_XM, "cross_market_significant_exp.tex"))
 
 
 
@@ -601,3 +601,79 @@ sig_pretty
 
 
 
+
+
+# ---- 11) Rolling Window Results ------------------------------
+
+PREDICTORS_CROSS_ROLL <- c("skew_ratio_80_120","skew_ratio_80_110","log_slope_quad")
+WINDOWS_MONTHS_ROLL   <- c(60)
+HORIZONS_MONTHS_ROLL  <- c(1, 3, 6, 12)
+
+BENCHMARK_TYPE_ROLL   <- "rolling"   
+WINDOW_TYPE_OOS_ROLL  <- "rolling"   
+MIN_FORECASTS    <- 12            # min number of OOS points required
+FDR_LEVEL        <- 0.1          # BH FDR threshold used for significance marking
+
+results_roll <- purrr::map_dfr(PREDICTORS_CROSS_ROLL, function(pred) {
+  run_oos_across_indices(
+    index_files     = INDEX_PATHS,
+    predictor       = pred,
+    windows_months  = WINDOWS_MONTHS_ROLL,
+    horizons_months = HORIZONS_MONTHS_ROLL,
+    benchmark       = BENCHMARK_TYPE_ROLL,
+    window_type     = WINDOW_TYPE_OOS_ROLL,
+    min_points      = MIN_FORECASTS
+  )
+})
+
+# MULTIPLE TESTING  (same logic as your monthly suite
+# Within each (benchmark, window_type, horizon) slice, adjust CW p-values
+# across all indices × predictors × windows in that slice.
+results_roll <- results_roll %>%
+  group_by(benchmark, window_type, window_months, predictor,horizon) %>%
+  mutate(cw_q_h = bh_adjust(cw_p_raw)) %>%
+  ungroup()
+
+
+fig18_cross_roll <- plot_heatmap_indices_both(
+  results_roll,
+  predictors_cross = PREDICTORS_CROSS_ROLL,
+  fdr_level = FDR_LEVEL
+)
+
+ggsave(
+  filename = file.path(OUT_FIG_XM, "fig18_cross_heatmap_rolling.png"),
+  plot     = fig18_cross_roll,
+  width    = 8, height = 4.5, dpi = 300
+)
+
+#Appendix for significant results
+
+sig_report_roll <- results_roll %>%
+  mutate(signif_flag = is.finite(cw_q_h) & (cw_q_h <= FDR_LEVEL) & (R2_oos_raw > 0)) %>%
+  filter(signif_flag) %>%
+  transmute(
+    index, predictor, window_months, horizon, benchmark, window_type,
+    R2_oos   = round(R2_oos_raw, 2),
+    beta_avg = round(beta_avg, 4),
+    q_BH     = signif(cw_q_h, 3)
+  ) %>%
+  arrange(predictor, horizon, desc(R2_oos))
+
+h_levels <- c("1m","3m","6m","12m")
+
+sig_roll <- sig_report_roll %>%
+  mutate(cell = sprintf("R2=%.1f, b=%.3f, q=%.3f", R2_oos, beta_avg, q_BH)) %>%
+  select(index, predictor, window_months, horizon, cell) %>%
+  tidyr::pivot_wider(names_from = horizon, values_from = cell) %>%
+  dplyr::select(index, predictor, window_months, dplyr::any_of(h_levels))
+
+TabC5 <- knitr::kable(
+  sig_roll,
+  format    = "latex",
+  booktabs  = TRUE,
+  longtable = TRUE,
+  escape    = TRUE   
+)
+
+writeLines(TabC5, file.path(OUT_TAB_XM, "cross_market_significant_roll.tex"))
