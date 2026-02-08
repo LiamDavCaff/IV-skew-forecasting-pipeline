@@ -623,7 +623,7 @@ ggsave(
 cat("\n[INFO] PC1–VIX correlation (z): ",
     round(cor(scores_m$PC1, M_full$vix_ann[ok_pca], use="pairwise.complete.obs"), 3), "\n")
 
-# Appendix Table B1: PCA variance explained 
+# Appendix Table B2: PCA variance explained 
   imp_m <- summary(pcm)$importance[2:3, 1:3]  # Proportion + Cumulative for PC1-3
 
 imp_tbl <- as.data.frame(imp_m) %>%
@@ -635,10 +635,10 @@ imp_tbl <- as.data.frame(imp_m) %>%
   )) %>%
   dplyr::rename(PC1 = `PC1`, PC2 = `PC2`, PC3 = `PC3`)
 
-# Save CSV (portable)
-readr::write_csv(imp_tbl, file.path(TAB_APP, "tableB1_pca_variance_explained.csv"))
+# Save CSV 
+readr::write_csv(imp_tbl, file.path(TAB_APP, "tableB2_pca_variance_explained.csv"))
 
-# Save LaTeX .tex (for \input{} in appendix)
+# Save LaTeX .tex 
 kableExtra::save_kable(
   knitr::kable(
     imp_tbl,
@@ -651,7 +651,7 @@ kableExtra::save_kable(
     escape   = FALSE
   ) |>
     kableExtra::kable_styling(latex_options = "hold_position"),
-  file = file.path(TAB_APP, "tableB1_pca_variance_explained.tex")
+  file = file.path(TAB_APP, "tableB2_pca_variance_explained.tex")
 )
 
 # Appendix Figure B1: smile fit R² over time
@@ -665,14 +665,14 @@ m_fit_m <- M_full %>%
     }
   ) %>% ungroup()
 
-figA1_appx <- ggplot(m_fit_m, aes(month, fit_r2)) +
+figB1_appx <- ggplot(m_fit_m, aes(month, fit_r2)) +
   geom_line() +
   labs(y="R² (quadratic skew fit)", x = NULL) +
   theme_minimal(base_size = 11)
 
 #save 
-ggsave(file.path(FIG_APP, "figB2_skew_fit_quality.png"),
-       figA1_appx, width=8, height=4, dpi=300)
+ggsave(file.path(FIG_APP, "figB1_skew_fit_quality.png"),
+       figB1_appx, width=8, height=4, dpi=300)
 
 
 # Appendix Figure B2: IV distribution by moneyness
@@ -786,7 +786,7 @@ insample_tbl_m <- in_sample_results_multi_from_M(M_full, c(1,3,6,12)) %>%
 # Save the full long table (every predictor × horizon)
 readr::write_csv(
   insample_tbl_m,
-  file.path(TAB_IS, "insample_results_long.csv")
+  file.path(TAB_IS, "Tab7_insample_results_long.csv")
 )
 
 # LATEX rows for in-sample table
@@ -849,7 +849,7 @@ kbl_obj <- knitr::kable(
 
 kableExtra::save_kable(
   kbl_obj,
-  file = file.path(TAB_IS, "table_insample_monthly.tex")
+  file = file.path(TAB_IS, "Tab7_insample_monthly.tex")
 )
 
 
@@ -919,7 +919,7 @@ res_pc1_m <- insample_hh_multi_batch_monthly(M_full, main_preds_m, horizons_mont
 #save as csv
 readr::write_csv(
   res_pc1_m,
-  file.path(TAB_IS, "insample_controls_vix_results_long.csv")
+  file.path(TAB_IS, "Tab7_insample_controls_vix_results_long.csv")
 )
 
 #save for latex
@@ -946,10 +946,8 @@ kbl_ctrl <- knitr::kable(
 
 kableExtra::save_kable(
   kbl_ctrl,
-  file = file.path(TAB_IS, "table_insample_controls_vix.tex")
+  file = file.path(TAB_IS, "Tab7__insample_controls_vix.tex")
 )
-
-
 
 # ---- 9) OOS + Clark West (monthly) --------------------------------------
 
@@ -1300,7 +1298,7 @@ fig11_m <- plot_oos_trend_through_time_raw_monthly(
 )
 
 ggsave(
-  filename = file.path(FIG_PATH, "fig11_paths_cumR2_monthly_Expanding.png"),
+  filename = file.path(FIG_PATH, "fig11_paths_cumR2_monthly_Expanding_120m.png"),
   plot     = fig11_m,
   width    = 8, height = 4.5, dpi = 300
 )
@@ -1369,8 +1367,26 @@ fig14_m_roll <- plot_oos_trend_through_time_raw_monthly(
 )
 
 ggsave(
-  filename = file.path(FIG_PATH, "fig14_paths_cumR2_monthly_Rolling.png"),
+  filename = file.path(FIG_PATH, "fig14_paths_cumR2_monthly_Rolling_60m.png"),
   plot     = fig14_m_roll,
+  width    = 8, height = 4.5, dpi = 300
+)
+
+# Robustness for Rolling 120-month window
+figC2_m_roll <- plot_oos_trend_through_time_raw_monthly(
+  paths_df_m_roll %>%
+    dplyr::filter(
+      window_months == 120,
+      window_type   == "rolling",
+      benchmark     == "rolling",
+      predictor %in% c("iv_skew_90_100","log_slope_quad", "skew_ratio_80_110", "skew_ratio_80_120")
+    ),
+  facet_by = "predictor"
+)
+
+ggsave(
+  filename = file.path(FIG_APP, "figC2_paths_cumR2_monthly_Rolling_120m.png"),
+  plot     = figC2_m_roll,
   width    = 8, height = 4.5, dpi = 300
 )
 
@@ -1563,7 +1579,7 @@ exp_beta_120m <- plot_beta_sd_monthly(
 )
 
 ggsave(
-  filename = file.path(FIG_BETA, "beta_expanding_120m.png"),
+  filename = file.path(FIG_BETA, "fig10_beta_expanding_120m.png"),
   plot     = exp_beta_120m,
   width    = 8, height = 4, dpi = 300
 )
@@ -1604,11 +1620,50 @@ roll_beta_60m <- plot_beta_sd_monthly(
 )
 
 ggsave(
-  filename = file.path(FIG_BETA, "beta_rolling_60m.png"),
+  filename = file.path(FIG_BETA, "fig13_beta_rolling_60m.png"),
   plot     = roll_beta_60m,
   width    = 8, height = 4, dpi = 300
 )
 
+#Robustness: Rolling beta - 120-month window
+
+pred_for_beta_m_roll <- c("iv_skew_90_100","log_slope_quad","skew_ratio_80_110","skew_ratio_80_120")
+windows_beta_m_roll  <- c(120)
+horizons_beta_m_roll <- c(3, 6, 12)
+window_type_beta_roll <- "rolling"
+
+betas_all_m_roll <- tidyr::crossing(pred = pred_for_beta_m_roll,
+                                    window = windows_beta_m_roll) %>%
+  purrr::pmap_dfr(function(pred, window) {
+    roll_beta_monthly(
+      M               = M_full,
+      horizons_months = horizons_beta_m_roll,
+      window_months   = window,
+      pred            = pred,
+      window_type     = window_type_beta_roll
+    )
+  }) %>%
+  dplyr::mutate(
+    pred_label = stringr::str_replace_all(pred, "_", " "),
+    horizon    = factor(horizon, levels = paste0(horizons_beta_m_roll, "m")),
+    window     = factor(window, levels = windows_beta_m_roll,
+                        labels = paste0(windows_beta_m_roll, "-month window"))
+  )
+
+regime_spans <- make_regime_spans(M_full)
+
+roll_beta_120m <- plot_beta_sd_monthly(
+  betas_df            = betas_all_m_roll,
+  regime_spans        = regime_spans,
+  shade_regimes       = FALSE,
+  shade_alpha         = 0.10,
+  shade_regime_value  = "crisis")
+
+ggsave(
+  filename = file.path(FIG_APP, "figC1_beta_rolling_120m.png"),
+  plot     = roll_beta_60m,
+  width    = 8, height = 4, dpi = 300
+)
 
 # ---- 15) Not for main use: (visual show of forecast vs benchmark) ---------------------------
 

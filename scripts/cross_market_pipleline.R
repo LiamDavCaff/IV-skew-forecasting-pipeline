@@ -26,10 +26,11 @@ suppressPackageStartupMessages({
   library(stringr)
   library(sandwich)
   library(lmtest)
+  library(knitr)
+  library(kableExtra)
   library(readr)
   library(grid)   # unit()
 })
-
 
 # ---- 0.1) Output folders -----------------------------------------------------
 
@@ -298,11 +299,33 @@ iv_coverage_daily <- purrr::map_dfr(names(INDEX_LIST), function(idx) {
   )
 })
 
-print(iv_coverage_daily)
-
 latest_first_full  <- max(iv_coverage_daily$first_full_80_120, na.rm = TRUE)
 COMMON_START_MONTH <- floor_date(latest_first_full, "month")
 message(">>> COMMON_START_MONTH = ", COMMON_START_MONTH)
+
+# Write to latex
+
+TabC3 <- iv_coverage_daily %>%
+  mutate(
+    any_start         = format(any_start, "%Y-%m-%d"),
+    any_end           = format(any_end, "%Y-%m-%d"),
+    first_full_80_120 = format(first_full_80_120, "%Y-%m-%d"),
+    last_full_80_120  = format(last_full_80_120, "%Y-%m-%d"),
+    coverage_share    = round(coverage_share, 3)
+  ) %>%
+  knitr::kable(
+    format   = "latex",
+    booktabs = TRUE,
+    caption  = "Daily IV coverage by index (finite IV at 80--120\\% moneyness).",
+    label    = "tab:iv_coverage_daily",
+    align    = "lcccccr"
+  ) %>%
+  kableExtra::kable_styling(latex_options = c("hold_position"))
+
+kableExtra::save_kable(
+  TabC3,
+  file = file.path(OUT_TAB_XM, "TabC1_iv_coverage_daily.tex")
+)
 
 
 # ---- 5) Add Excess Returns ------------------------------------------------------
@@ -593,15 +616,7 @@ TabC4 <- knitr::kable(
   escape    = TRUE   
 )
 
-writeLines(TabC4, file.path(OUT_TAB_XM, "cross_market_significant_exp.tex"))
-
-
-
-
-
-
-
-
+writeLines(TabC4, file.path(OUT_TAB_XM, "TabC2_cross_market_significant_exp.tex"))
 
 # ---- 11) Rolling Window Results ------------------------------
 
@@ -676,4 +691,4 @@ TabC5 <- knitr::kable(
   escape    = TRUE   
 )
 
-writeLines(TabC5, file.path(OUT_TAB_XM, "cross_market_significant_roll.tex"))
+writeLines(TabC5, file.path(OUT_TAB_XM, "TabC3_cross_market_significant_roll.tex"))
