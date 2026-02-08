@@ -1,4 +1,4 @@
-############################################################
+# ===========================================================
 # MULTI-INDEX IV SKEW OOS FORECASTING WITH COMMON START DATE
 # ------------------------------------------------------------
 # - Uses full monthly builder (all IV composites, macro, wings)
@@ -9,8 +9,8 @@
 # - Produces heatmap: indices × horizons × window lengths,
 #   faceted by predictor (auto-labelled)
 # - Multiple-testing: BH-adjust CW p-values within each (benchmark, window_type, horizon)
-#   -> significance = (q_BH <= FDR_LEVEL) & (R2 > 0)
-############################################################
+# - Significance = (q_BH <= FDR_LEVEL) & (R2 > 0)
+# ===========================================================
 
 # ---- 0) Packages ---------------------------------------------------------
 

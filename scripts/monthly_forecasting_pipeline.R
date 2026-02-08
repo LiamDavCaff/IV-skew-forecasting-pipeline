@@ -1,5 +1,5 @@
 # ===========================================================
-#  Monthly Forecasting Pipeline (1m, 3m, 6m, 12m)
+#  Monthly Forecasting Pipeline 
 #  EDA → IS → IS|Level →  OS (Clark West) →  Rolling Beta
 #  - Monthly panel cached once
 #  - Rolling / Expanding OLS via helper
@@ -489,7 +489,7 @@ readr::write_csv(
   file.path(TAB_EDA, "table1_summary_stats.csv")
 )
 
-# Figure 1: Mean IV by moneyness
+# Figure 4: Mean IV by moneyness
 iv_nodes <- c("iv_80","iv_90","iv_100","iv_110","iv_120")
 
 iv_means <- S_all %>%
@@ -499,7 +499,7 @@ iv_means <- S_all %>%
     moneyness = as.numeric(sub("iv_", "", as.character(variable)))
   )
 
-fig1_main <- ggplot(iv_means, aes(x = moneyness, y = mean * 100)) +
+fig4_main <- ggplot(iv_means, aes(x = moneyness, y = mean * 100)) +
   geom_line() +
   geom_point() +
   scale_x_continuous(breaks = c(80,90,100,110,120),
@@ -508,8 +508,8 @@ fig1_main <- ggplot(iv_means, aes(x = moneyness, y = mean * 100)) +
   theme_minimal()
 
 ggsave(
-  filename = file.path(FIG_EDA, "fig01_mean_iv_by_moneyness.png"),
-  plot     = fig1_main,
+  filename = file.path(FIG_EDA, "fig04_mean_iv_by_moneyness.png"),
+  plot     = fig4_main,
   width    = 8, height = 4.5, dpi = 300
 )
 
@@ -519,7 +519,7 @@ iv_monthly_long <- M_pct %>%
   pivot_longer(-month, names_to = "moneyness", values_to="iv") %>%
   mutate(moneyness = factor(moneyness, levels = c("80%","90%","100%","110%","120%")))
 
-fig2_main <- ggplot(iv_monthly_long, aes(x = month, y = iv, colour = moneyness)) +
+fig5_main <- ggplot(iv_monthly_long, aes(x = month, y = iv, colour = moneyness)) +
   geom_line(alpha = 0.65) +
   geom_smooth(se = FALSE, span = 0.2, linewidth = 0.6) +
   scale_y_continuous(name = "Implied Volatility (%)") +
@@ -527,8 +527,8 @@ fig2_main <- ggplot(iv_monthly_long, aes(x = month, y = iv, colour = moneyness))
   theme_minimal(base_size = 11)
 
 ggsave(
-  filename = file.path(FIG_EDA, "fig02_monthly_iv_by_moneyness_over_time.png"),
-  plot     = fig2_main,
+  filename = file.path(FIG_EDA, "fig05_monthly_iv_by_moneyness_over_time.png"),
+  plot     = fig5_main,
   width    = 8, height = 4.5, dpi = 300
 )
 
@@ -541,7 +541,7 @@ df3 <- M_full %>%
          ret12_z = as.numeric(scale(ret12)),
          skew_z_lag1 = dplyr::lag(skew_z,1))
 
-fig3_main <- ggplot(df3, aes(month)) +
+fig6_main <- ggplot(df3, aes(month)) +
   geom_line(aes(y = ret12_z, colour = "12m excess return"), linewidth = 0.6, na.rm = TRUE) +
   geom_line(aes(y = skew_z_lag1, colour = "iv_skew_80_100"), linewidth = 0.6, alpha = 0.9, na.rm = TRUE) +
   labs(x = NULL, y = "z-score") +
@@ -550,8 +550,8 @@ fig3_main <- ggplot(df3, aes(month)) +
   theme_minimal(base_size = 11)
 
 ggsave(
-  filename = file.path(FIG_EDA, "fig03_skew_vs_12m_returns.png"),
-  plot     = fig3_main,
+  filename = file.path(FIG_EDA, "fig06_skew_vs_12m_returns.png"),
+  plot     = fig6_main,
   width    = 8, height = 4.5, dpi = 300
 )
 
@@ -560,7 +560,7 @@ Mm <- M_full %>%
   transmute(month, ret_12m = excess_12m,
             d_iv_pp = 100*(dplyr::lead(iv_100) - iv_100))
 
-fig4_main <- ggplot(dplyr::filter(Mm, is.finite(ret_12m), is.finite(d_iv_pp)),
+fig7_main <- ggplot(dplyr::filter(Mm, is.finite(ret_12m), is.finite(d_iv_pp)),
                     aes(ret_12m, d_iv_pp)) +
   geom_point(alpha = .25) +
   geom_smooth(method = "lm", se = FALSE, linewidth = 0.8) +
@@ -573,12 +573,12 @@ cat("\n[INFO] HAC slope (ΔIVpp ~ 12m return):\n")
 print(lmtest::coeftest(fit_m, vcov = sandwich::NeweyWest(fit_m, lag = 12)))
 
 ggsave(
-  filename = file.path(FIG_EDA, "fig04_volatility_feedback.png"),
-  plot     = fig4_main,
+  filename = file.path(FIG_EDA, "fig07_volatility_feedback.png"),
+  plot     = fig7_main,
   width    = 8, height = 4.5, dpi = 300
 )
 
-# Figure 5a/b: PCA diagnostics;Pc1 vs VIX
+# Figure 8a/b: PCA diagnostics;Pc1 vs VIX
 iv_cols <- c("iv_80","iv_90","iv_100","iv_110","iv_120")
 ok_pca  <- stats::complete.cases(M_full[, iv_cols])
 Xm      <- M_full[ok_pca, iv_cols, drop = FALSE] %>% scale() %>% as.matrix()
@@ -591,14 +591,14 @@ load_long_m <- loadings_m %>% select(moneyness, PC1, PC2, PC3) %>%
   pivot_longer(-moneyness, names_to="PC", values_to="loading")
 
 #Figure 5a - loadings by moneyness
-fig5a_main <- ggplot(load_long_m, aes(moneyness, loading, group = PC, colour = PC)) +
+fig8a_main <- ggplot(load_long_m, aes(moneyness, loading, group = PC, colour = PC)) +
   geom_line(aes(linetype = PC)) + geom_point(size = 2) +
   labs(x = "Moneyness node", y = "Loading") +
   theme_minimal(base_size = 11)
 
 ggsave(
-  filename = file.path(FIG_EDA, "fig05a_pca_loadings.png"), 
-  plot     = fig5a_main, 
+  filename = file.path(FIG_EDA, "fig08a_pca_loadings.png"), 
+  plot     = fig8a_main, 
   width    =8, height=4.5, dpi=300)
 
 scores_m <- as_tibble(pcm$x) %>% mutate(month = M_full$month[ok_pca])
@@ -609,15 +609,15 @@ ov_m <- tibble(
 )
 
 # Figure 5b; Vix vs PC1
-fig5b_main <- ggplot(ov_m, aes(month)) +
+fig8b_main <- ggplot(ov_m, aes(month)) +
   geom_line(aes(y = PC1_z, colour = "PC1")) +
   geom_line(aes(y = VIX_z, colour = "VIX")) +
   labs(y = "z-score", x = NULL, colour = NULL) +
   theme_minimal()
 
 ggsave(
-  filename = file.path(FIG_EDA, "fig05b_pc1_vs_vix.png"), 
-  plot     = fig5b_main, 
+  filename = file.path(FIG_EDA, "fig08b_pc1_vs_vix.png"), 
+  plot     = fig8b_main, 
   width    =8, height=4.5, dpi=300)
 
 cat("\n[INFO] PC1–VIX correlation (z): ",
