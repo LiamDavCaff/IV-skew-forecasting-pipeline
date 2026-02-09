@@ -8,31 +8,26 @@
 # ===========================================================
 
 # ---- 0) Packages ---------------------------------------------------------
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tidyr)
-  library(ggplot2)
-  library(lubridate)
-  library(zoo)
-  library(slider)
-  library(scales)
-  library(stringr)
-  library(cowplot)
-  library(scico)
-  library(ggtext)
-  library(lmtest)
-  library(sandwich)
-  library(broom)
-  library(np)
-  suppressWarnings({ if (!requireNamespace("ggridges", quietly = TRUE)) NULL else library(ggridges) })
-  library(knitr); library(kableExtra); library(tibble); library(purrr); library(readr)
-})
-if (!requireNamespace("roll", quietly = TRUE)) install.packages("roll")
-library(roll)
 
+pkgs <- c(
+  "here",
+  "dplyr","tidyr","ggplot2","lubridate","zoo","slider","scales","stringr",
+  "cowplot","scico","ggtext","lmtest","sandwich","broom","np",
+  "knitr","kableExtra","tibble","purrr","readr","roll"
+)
 
-# ---- 0.1) Output folders ------------------------------------------------------
+to_install <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(to_install)) {
+  install.packages(to_install, repos = "https://cloud.r-project.org")
+}
 
+suppressPackageStartupMessages(
+  invisible(lapply(pkgs, library, character.only = TRUE))
+)
+
+# ---- 0.1) Project root + output folders ------------------------------------------------------
+
+ROOT <- here::here()
 FIG_DAILY <- file.path("outputs", "daily", "figures")
 dir.create(FIG_DAILY, recursive = TRUE, showWarnings = FALSE)
 
@@ -53,11 +48,6 @@ data <- readRDS(DATA_FILE)
 stopifnot("date" %in% names(data))
 
 # ---- 2) Helpers ----------------------------------------------------------
-
-last_non_na <- function(x) {
-  y <- x[!is.na(x)]
-  if (length(y) == 0) NA_real_ else tail(y, 1)
-}
 
 # Snap EOM macro prints back ≤ maxgap days (handles weekend EOM), then LOCF (no peek)
 snap_back_then_ffill <- function(x, date, maxgap = 3) {
@@ -676,4 +666,3 @@ ggsave(
   width    = 8, height = 4.5, dpi = 300
 )
 
-S

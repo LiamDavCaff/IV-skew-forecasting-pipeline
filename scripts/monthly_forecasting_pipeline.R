@@ -9,33 +9,29 @@
 # ===========================================================
 
 # ---- 0) Packages ---------------------------------------------------------
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tidyr)
-  library(ggplot2)
-  library(lubridate)
-  library(zoo)
-  library(slider)
-  library(scales)
-  library(stringr)
-  library(cowplot)
-  library(scico)
-  library(ggtext)
-  library(lmtest)
-  library(sandwich)
-  library(broom)
-  library(np)
-  suppressWarnings({ if (!requireNamespace("ggridges", quietly = TRUE)) NULL else library(ggridges) })
-  library(knitr); library(kableExtra); library(tibble); library(purrr); library(readr)
-})
-if (!requireNamespace("roll", quietly = TRUE)) install.packages("roll")
-library(roll)
 
+pkgs <- c(
+  "here",
+  "dplyr","tidyr","ggplot2","lubridate","zoo","slider","scales","stringr",
+  "cowplot","scico","ggtext","lmtest","sandwich","broom","np",
+  "knitr","kableExtra","tibble","purrr","readr","roll"
+)
 
-# ---- 0.1) Output folders ------------------------------------------------
+to_install <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(to_install)) {
+  install.packages(to_install, repos = "https://cloud.r-project.org")
+}
 
-OUT_FIG <- file.path("outputs", "monthly", "figures")
-OUT_TAB <- file.path("outputs", "monthly", "tables")
+suppressPackageStartupMessages(
+  invisible(lapply(pkgs, library, character.only = TRUE))
+)
+
+# ---- 0.1) Project root and output folders ------------------------------------------------
+
+ROOT <- here::here()
+
+OUT_FIG <- file.path(ROOT, "outputs", "monthly", "figures")
+OUT_TAB <- file.path(ROOT, "outputs", "monthly", "tables")
 
 FIG_EDA  <- file.path(OUT_FIG, "01_eda")
 FIG_BETA <- file.path(OUT_FIG, "02_rolling_beta")
@@ -47,10 +43,8 @@ TAB_EDA  <- file.path(OUT_TAB, "01_eda")
 TAB_IS   <- file.path(OUT_TAB, "02_insample")
 TAB_APP  <- file.path(OUT_TAB, "03_appendix")
 
-invisible(lapply(
-  c(FIG_EDA, FIG_BETA, FIG_HM, FIG_PATH, FIG_APP, TAB_EDA, TAB_IS, TAB_APP),
-  dir.create, recursive = TRUE, showWarnings = FALSE
-))
+dirs <- c(FIG_EDA, FIG_BETA, FIG_HM, FIG_PATH, FIG_APP, TAB_EDA, TAB_IS, TAB_APP)
+invisible(lapply(dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
 
 # ---- 1) Load data --------------------------------------------------------
 
@@ -70,6 +64,7 @@ stopifnot("date" %in% names(data))
 
 # ---- 2) Helpers ----------------------------------------------------------
 
+# get last available observation of month (end of month)
 last_non_na <- function(x) {
   y <- x[!is.na(x)]
   if (length(y) == 0) NA_real_ else tail(y, 1)
@@ -355,6 +350,7 @@ add_pc1_to_monthly <- function(M) {
 }
 
 # ---- 4) Measure families (monthly) --------------------------------------
+
 iv_levels_m   <- c("iv_80","iv_90","iv_100","iv_110","iv_120","vix_ann")
 realised_m    <- c("var_1m_mth","rv_1m_mth")
 skew_diff_m   <- c("iv_skew_80_100","iv_skew_80_110","iv_skew_80_120",

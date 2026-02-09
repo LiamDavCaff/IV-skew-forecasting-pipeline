@@ -14,33 +14,34 @@
 
 # ---- 0) Packages ---------------------------------------------------------
 
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(tidyr)
-  library(purrr)
-  library(ggplot2)
-  library(lubridate)
-  library(zoo)
-  library(slider)
-  library(scico)
-  library(stringr)
-  library(sandwich)
-  library(lmtest)
-  library(knitr)
-  library(kableExtra)
-  library(readr)
-  library(grid)   # unit()
-})
+pkgs <- c(
+  "here",
+  "dplyr","tidyr","ggplot2","lubridate","zoo","slider","scales","stringr",
+  "cowplot","scico","ggtext","lmtest","sandwich","broom","np",
+  "knitr","kableExtra","tibble","purrr","readr","roll"
+)
 
-# ---- 0.1) Output folders -----------------------------------------------------
+to_install <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(to_install)) {
+  install.packages(to_install, repos = "https://cloud.r-project.org")
+}
 
-OUT_FIG_XM <- file.path("outputs", "cross_market", "figures")
-OUT_TAB_XM <- file.path("outputs", "cross_market", "appendix")
+suppressPackageStartupMessages(
+  invisible(lapply(pkgs, library, character.only = TRUE))
+)
+
+# ---- 0.1) Project root + output folders -----------------------------------------------------
+
+ROOT <- here::here()
+
+OUT_FIG_XM <- file.path(ROOT, "outputs", "cross_market", "figures")
+OUT_TAB_XM <- file.path(ROOT, "outputs", "cross_market", "appendix")
 
 dir.create(OUT_FIG_XM, recursive = TRUE, showWarnings = FALSE)
 dir.create(OUT_TAB_XM, recursive = TRUE, showWarnings = FALSE)
 
 # ---- 1) load data -----------------------------------------------------------
+
 INDEX_KEYS <- c("SPX","FTSE","DAX","ASX","ESTOX","KOSPI","NASDAQ","NIFTY","NIKKEI","SMI")
 
 # Default naming convention: data/bbg_<lowercase key>_data.rds
@@ -61,22 +62,24 @@ if (length(missing) > 0) {
   )
 }
 
-# Optional: read all into memory (used by coverage step)
+# read all into memory (used by coverage step)
 INDEX_LIST <- purrr::map(INDEX_PATHS, readRDS)
 
 # ---- 2) Helpers ----------------------------------------------------------
 
-
+# get last available observation of month (end of month)
 last_non_na <- function(x) {
   y <- x[!is.na(x)]
   if (length(y) == 0) NA_real_ else tail(y, 1)
 }
 
+# Snap EOM macro prints back ≤ maxgap days (handles weekend EOM), then LOCF (no peek)
 snap_back_then_ffill <- function(x, date, maxgap = 3) {
   x_nocb <- zoo::na.locf(x, fromLast = TRUE, maxgap = maxgap, na.rm = FALSE)
   zoo::na.locf(x_nocb, na.rm = FALSE)
 }
 
+# Rolling mean using cumsums, then lag by 1 to avoid peek
 roll_mean_lag1 <- function(y, k) {
   y2  <- replace(y, !is.finite(y), 0)
   cnt <- as.integer(is.finite(y))
@@ -87,6 +90,7 @@ roll_mean_lag1 <- function(y, k) {
   dplyr::lag(m, 1)
 }
 
+# Expanding mean using only info through t-1 (no peek)
 exp_mean_lag1 <- function(y) {
   y2  <- ifelse(is.finite(y), y, 0)
   cnt <- as.integer(is.finite(y))
@@ -96,6 +100,7 @@ exp_mean_lag1 <- function(y) {
   dplyr::lag(m, 1)
 }
 
+# Indices for rolling or expanding estimation window
 get_window_indices <- function(i, window_months, window_type = c("rolling", "expanding")) {
   window_type <- match.arg(window_type)
   if (window_type == "rolling") {

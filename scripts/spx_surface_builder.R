@@ -2,32 +2,28 @@
 # Build an IV surface with 3 axes (IV, moneyness, tenor)
 # ===========================================================
 
-# ---- 1) Load Packages -----------------------------------------------------------
+# ---- 0) Load Packages -----------------------------------------------------------
 
-suppressPackageStartupMessages({
-  library(dplyr); library(tidyr); library(stringr)
-  library(plot3D)
-  library(viridisLite)
-  library(readr)
-  library(here)
-})
+pkgs <- c("dplyr","tidyr","stringr","plot3D","viridisLite","readr","here")
 
-# ---- 2) Load data -----------------------------------------------------------
+to_install <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+if (length(to_install)) {
+  install.packages(to_install, repos = "https://cloud.r-project.org")
+}
+
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+# ---- 1) Project root + output folders -----------------------------------------------------------
 
 ROOT        <- here::here()  # repo root
-DATA_FILE   <- file.path(ROOT, "data", "spx_iv_surface_long.rds")
-target_date <- as.Date("2020-03-03")
-iv_surface_spx <- readRDS(DATA_FILE)
-
-
-# output folder (monthly EDA)
 OUT_DIR <- file.path(ROOT, "outputs", "monthly", "figures", "01_eda")
 dir.create(OUT_DIR, recursive = TRUE, showWarnings = FALSE)
 
-out_png <- file.path(
-  OUT_DIR,
-  sprintf("fig1_spx_iv_surface_%s.png", format(target_date, "%Y-%m-%d"))
-)
+
+# ---- 2) Load Data ------------------------------------------------------------
+
+DATA_FILE   <- file.path(ROOT, "data", "spx_iv_surface_long.rds")
+target_date <- as.Date("2020-03-03") #COVID
 
 # sanity check
 if (!file.exists(DATA_FILE)) {
@@ -40,10 +36,16 @@ if (!file.exists(DATA_FILE)) {
   )
 }
 
+iv_surface_spx <- readRDS(DATA_FILE)
+
+out_png <- file.path(
+  OUT_DIR,
+  sprintf("fig1_spx_iv_surface_%s.png", format(target_date, "%Y-%m-%d"))
+)
+
 # ---- 3) Helpers -----------------------------------------------------------------
 
 # To convert tenor days to months
-
 parse_tenor_months <- function(tenor) {
   t <- toupper(trimws(as.character(tenor)))
   num <- readr::parse_number(t)
