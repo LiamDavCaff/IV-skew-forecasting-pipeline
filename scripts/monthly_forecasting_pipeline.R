@@ -322,7 +322,7 @@ prepare_monthly_for_forecasting <- function(df_daily,
   M %>% dplyr::select(-coefs, -b_quad, -c_quad, -coefs_log, -b_log, -c_log)
 }
 
-# Excess returns with correct RF timing (sum rf_{m+1..m+h})
+# Excess returns with correct Risk free timing (sum rf_{m+1..m+h})
 add_excess_returns_monthly <- function(M, horizons_months = c(1,3,6,12,24,36,60)) {
   out <- M
   rf_forward <- dplyr::lead(out$rf_m, 1)
@@ -803,7 +803,7 @@ panel <- insample_tbl_m %>%
 # Escape underscores etc. for LaTeX, and wrap in \texttt{}
 escape_pred <- function(x) {
   x <- as.character(x)
-  x <- gsub("\\\\", "\\\\textbackslash{}", x)  # rare, but safe
+  x <- gsub("\\\\", "\\\\textbackslash{}", x)  
   x <- gsub("_", "\\\\_", x)
   paste0("\\\\texttt{", x, "}")
 }
