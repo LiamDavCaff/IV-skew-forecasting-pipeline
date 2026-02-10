@@ -1,5 +1,5 @@
 # ===========================================================
-# Build an IV surface with 3 axes (IV, moneyness, tenor)
+# Build an IV surface for the SPX with 3 axes (IV, moneyness, tenor)
 # ===========================================================
 
 # ---- 0) Load Packages -----------------------------------------------------------
@@ -106,7 +106,7 @@ persp3D(
   colvar = Zt,
   col = viridisLite::viridis(200),
   NAcol = "grey85",
-  xlab = "Moneyness (K/S)",
+  xlab = "Moneyness (X/S)",
   ylab = "Tenor (months)",
   zlab = "Implied Volatility",
   ticktype = "detailed",

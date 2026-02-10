@@ -1,5 +1,5 @@
 ###############################################################################
-#  S&P 500: 30-day implied-vol surface + macro / market panel
+#  S&P 500: 30-day implied-vol curve + macro / market panel
 ###############################################################################
 library(dplyr)
 library(tidyr)
@@ -42,7 +42,7 @@ iv_wide <- iv_surface_df %>%
   select(date, moneyness, implied_vol) %>% 
   pivot_wider(names_from = moneyness, values_from = implied_vol)
 
-# ── 3.  Market & macro data (USA) ──────────────────────────────────────────
+# ── 3.  Market & macro data  ──────────────────────────────────────────
 spx_tot  <- bdh("SPXT Index", "PX_LAST", as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, total_price = PX_LAST)
 

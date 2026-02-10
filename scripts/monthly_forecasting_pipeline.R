@@ -187,11 +187,11 @@ prepare_monthly_for_forecasting <- function(df_daily,
                                             infl_col  = "inflation_yoy",
                                             ts_col    = "term_spread",
                                             var1m_col = "stock_var_1m",  # realized ~21d variance column
-                                            rf_basis  = 360) {           # 360 (USD/EUR/CHF), 365 (GBP/HKD/JPY/INR)
+                                            rf_basis  = 360) {           # days for risk free rate calc
   eps   <- .Machine$double.eps
   m_vec <- c(0.8, 0.9, 1.0, 1.1, 1.2)
   
-  # Daily → with RF accrual to next calendar day
+  # Daily -> with RF accrual to next calendar day
   Dd <- df_daily %>%
     dplyr::arrange(.data[[date_col]]) %>%
     dplyr::mutate(
@@ -200,7 +200,7 @@ prepare_monthly_for_forecasting <- function(df_daily,
       spot_price  = .data[[spot_col]],
       logp_d      = log(price),
       
-      rf_ann      = zoo::na.locf(.data[[rf_col]] / 100, na.rm = FALSE),  # % → decimal
+      rf_ann      = zoo::na.locf(.data[[rf_col]] / 100, na.rm = FALSE),  # % to decimal
       next_date   = dplyr::lead(date),
       dcf         = as.numeric(next_date - date) / rf_basis,
       rf_piece    = dplyr::if_else(is.na(dcf), NA_real_, log1p(rf_ann * dcf)),
@@ -364,6 +364,7 @@ valuation_macro_m <- c("log_ep","log_bm","t3m_yield","lty_yield","term_spread","
 
 # ---- 5) Build monthly panel (cache once) --------------------------------
 
+# build full monthly panel -> covert daily to monthly, generate return targets
 M_full <- data %>%
   prepare_monthly_for_forecasting() %>%
   add_excess_returns_monthly(c(1,3,6,12)) %>%
@@ -384,7 +385,7 @@ M_full <- data %>%
     mutate(
       .,
       vix_p80 = p80,
-      regime  = if_else(vix_ma3 >= p80, "crisis", "calm")
+      regime  = if_else(vix_ma3 >= p80, "crisis", "calm") # classify months which are above 80th percentile; later used for rolling beta
     )
   }
 
@@ -686,17 +687,24 @@ ggsave(file.path(FIG_APP, "figB2_iv_distribution_by_moneyness.png"),
 # ---- 7) IN-SAMPLE (UNIVARIATE) ------------------------------------------
 
 insample_stats_monthly <- function(M, horizons_months, pred = "iv_skew_80_100") {
+  
+  # For each horizon h in horizons_months, compute regression stats and return a matrix-like output
   vapply(horizons_months, function(h) {
-    y <- paste0("excess_", h, "m")
+    y <- paste0("excess_", h, "m")  # dependent variable name (eg. excess_6m)
     ok <- is.finite(M[[pred]]) & is.finite(M[[y]])
+    
+    # If too few observations, return NA
     if (sum(ok) < 120/10) {
       return(c(R2_in=NA, adj_R2_in=NA, Beta=NA, Beta_1sd_y=NA, Beta_sd_sd=NA, t_HH=NA, p_HH=NA))
     }
-    
+    # Fit in-sample regression: excess_hm ~ pred
     fit <- lm(reformulate(pred, y), data = M[ok, , drop = FALSE])
+    
+    # Extract r^2 and adj R^2
     R2        <- 100 * summary(fit)$r.squared
     adj_R2_in <- 100 * summary(fit)$adj.r.squared
     
+    # Newey West HAC to account for overlap/serial correlations (lag = h months)
     V   <- sandwich::NeweyWest(fit, lag = h, prewhite = FALSE, adjust = TRUE)
     se  <- sqrt(pmax(diag(V), 0))[pred]
     
@@ -704,6 +712,8 @@ insample_stats_monthly <- function(M, horizons_months, pred = "iv_skew_80_100") 
     t_HH <- beta / se
     p_HH <- 2 * stats::pt(abs(t_HH), df = fit$df.residual, lower.tail = FALSE)
     
+    # Beta_1sd_y = predicted change in excess return for a 1 SD increase in predictor
+    # Beta_sd_sd = same effect expressed in units of SD(y) (standardised effect size)
     sd_x <- sd(M[[pred]][ok]); sd_y <- sd(M[[y]][ok])
     beta_1sd_y <- beta * sd_x
     beta_sd_sd <- if (is.finite(sd_y) && sd_y > 0) beta_1sd_y / sd_y else NA_real_
@@ -722,6 +732,7 @@ in_sample_results_multi_from_M <- function(M,
                                                          iv_levels_m, premia_m, valuation_macro_m),
                                            p_adjust_method = "BH") {
   
+ #Loop over predictors p, run insample_stats_monthly(), and stack results into a tidy long table
   out <- purrr::map_dfr(pred_vars, function(p) {
     mat <- insample_stats_monthly(M, horizons_months, pred = p)
     tibble::tibble(
@@ -852,10 +863,12 @@ kableExtra::save_kable(
 # ---- 8) IN-SAMPLE (CONDITIONAL on level: VIX) ---------------------------
 
 insample_hh_multi_monthly <- function(M, h_months, main_pred, control = c("vix_ann")) {
-  y_col  <- paste0("excess_", h_months, "m")
-  x_vars <- c(main_pred, control)
+  y_col  <- paste0("excess_", h_months, "m") #Horizon name eg/ excess_6m
+  x_vars <- c(main_pred, control) #Combine main predictor + control into regressor set
   
-  keep <- stats::complete.cases(M[, c(y_col, x_vars), drop = FALSE])
+  keep <- stats::complete.cases(M[, c(y_col, x_vars), drop = FALSE])  #Only keep rows with full data
+  
+  # If too few variables return NA's
   if (sum(keep) < 12) {
     return(tibble::tibble(
       horizon = h_months, main_pred = main_pred, control = paste(control, collapse = "+"),
@@ -867,22 +880,30 @@ insample_hh_multi_monthly <- function(M, h_months, main_pred, control = c("vix_a
   
   df <- M[keep, , drop = FALSE]
   
+  # Fit full model: excess_hm ~ main_pred + control(s)
   fit_full <- stats::lm(stats::reformulate(x_vars, response = y_col), data = df)
+  
+  # Fit restricted model: excess_hm ~ control(s) only
   fit_ctrl <- stats::lm(stats::reformulate(control, response = y_col), data = df)
   
+  # Information criteria for model comparison (full vs control-only)
   AIC_full <- stats::AIC(fit_full); AIC_ctrl <- stats::AIC(fit_ctrl)
   BIC_full <- stats::BIC(fit_full); BIC_ctrl <- stats::BIC(fit_ctrl)
   
+  # Newey–West HAC covariance for the full regression
+  # lag = h_months approximates the overlap length for h-month returns
   V_full <- sandwich::NeweyWest(fit_full, lag = h_months, prewhite = FALSE, adjust = TRUE)
   b      <- stats::coef(fit_full)
   se     <- sqrt(pmax(diag(V_full), 0))
   
+  # main predictor coefficient and HAC SE
   b_main  <- unname(b[main_pred])
   se_main <- unname(se[main_pred])
   
   t_main <- b_main / se_main
   p_main <- 2 * stats::pt(abs(t_main), df = fit_full$df.residual, lower.tail = FALSE)
   
+  # Scale coefficients (to report in basis pts for a 1 SD move)
   sd_x <- stats::sd(df[[main_pred]])
   beta_main_1sd_bps <- 1e4 * (b_main * sd_x)
   
@@ -898,15 +919,18 @@ insample_hh_multi_monthly <- function(M, h_months, main_pred, control = c("vix_a
   )
 }
 
-
+# RUn multi predictors 
 insample_hh_multi_batch_monthly <- function(M, main_preds, horizons_months = c(1,3,6,12), control = "vix_ann") {
+  # loop over predictors, horizons and row bind output
   purrr::map_dfr(main_preds, \(p)
                  purrr::map_dfr(horizons_months, \(h) insample_hh_multi_monthly(M, h, p, control = control)))
 }
 
+#Choose predictors
 main_preds_m <- c("iv_skew_80_100", "iv_skew_90_120", "skew_ratio_80_120", "skew_ratio_90_110", 
                   "skew_ratio_90_120", "log_slope_quad", "iv_110", "iv_120")
 
+#Run for horizons of 6,12 and control = VIX
 res_pc1_m <- insample_hh_multi_batch_monthly(M_full, main_preds_m, horizons_months = c(6,12), control = "vix_ann") |>
   dplyr::mutate(
     t_main = round(t_main, 2)
@@ -955,41 +979,51 @@ oos_stats_fast_monthly <- function(
     benchmark    = c("rolling","expanding"),
     window_type  = c("rolling","expanding")
 ) {
+  
+  # Ensure benchmark and window_type are one of the allowed options
   benchmark   <- match.arg(benchmark)
   window_type <- match.arg(window_type)
   
+  # loop over horiozns and return vector of oos stats for each horizon
   vapply(
     horizons_months,
     function(h) {
-      y <- M[[paste0("excess_", h, "m")]]
-      X <- as.matrix(M[, pred, drop = FALSE])
+      
+      # dependent variable:
+      y <- M[[paste0("excess_", h, "m")]]   #"excess_12m" -> due to how excess return vars are named
+      X <- as.matrix(M[, pred, drop = FALSE]) 
+      
+      #Generate rolling/expanding OLS forecast using helper:
       
       ols <- get_ols_forecasts(
         y, X, h_months = h,
         window_months = window_months,
         window_type   = window_type
       )
-      f_mod <- ols$f_mod
-      betas <- ols$betas
+      f_mod <- ols$f_mod  #Model forecasts
+      betas <- ols$betas  #corresponding beta coefficent
       
+      
+      #Construct the historical mean benchmarks using the helpers
       f_bm <- if (benchmark == "rolling") {
         roll_mean_lag1(y, window_months)
       } else {
         exp_mean_lag1(y)
       }
       
+      #Find dates for which we have full data (ie. model forecast, benchmark forecats and target)
       ok <- which(is.finite(f_mod) & is.finite(f_bm) & is.finite(y))
       if (length(ok) < 40)
         return(c(R2_raw=NA, cw_stat=NA, cw_p=NA, beta_avg=NA))
       
-      y_act <- y[ok]
-      err_m <- y_act - f_mod[ok]
-      err_b <- y_act - f_bm[ok]
+      y_act <- y[ok]              # Actual returns 
+      err_m <- y_act - f_mod[ok]  # Model error
+      err_b <- y_act - f_bm[ok]   # Benchmark error
       
-      R2_raw <- 100 * (1 - sum(err_m^2) / sum(err_b^2))
+      R2_raw <- 100 * (1 - sum(err_m^2) / sum(err_b^2)) #Campbell-Thomson R^2
       
-      adj_loss <- err_b^2 - (err_m^2 - (f_bm[ok] - f_mod[ok])^2)
-      cw_var   <- sandwich::NeweyWest(lm(adj_loss ~ 1), lag = h, prewhite = FALSE)[1,1]
+      adj_loss <- err_b^2 - (err_m^2 - (f_bm[ok] - f_mod[ok])^2) # Clark west adjustment for nested models
+      cw_var   <- sandwich::NeweyWest(lm(adj_loss ~ 1), lag = h, prewhite = FALSE)[1,1] #HAC lvar of CWE adjusted loss (lag = h)
       cw_stat  <- mean(adj_loss) / sqrt(cw_var)
       cw_p     <- pnorm(cw_stat, lower.tail = FALSE)
       
@@ -1454,7 +1488,7 @@ roll_beta_monthly <- function(
       se_hac[i] <- sqrt(pmax(diag(V_i)[2], 0))
     }
     
-    # Standardised betas: "effect per 1 SD move in predictor"
+    # Standardised betas: effect per 1 SD move in predictor
     beta_sd <- beta_raw * sd_x
     se_sd   <- se_hac   * sd_x
     
@@ -1500,7 +1534,7 @@ make_regime_spans <- function(M) {
     )
 }
 
-# - Plot function with a "shade_regimes" switch 
+# Plot function with a "shade_regimes" switch 
 plot_beta_sd_monthly <- function(
     betas_df,
     regime_spans = NULL,
@@ -1546,6 +1580,7 @@ plot_beta_sd_monthly <- function(
 
 # 14.1) Expanding Beta
 
+#Choose setting for predctors, window length, horizon and forecast procedure
 pred_for_beta_m_exp <- c("log_slope_quad", "skew_ratio_90_120")
 windows_beta_m_exp  <- c(120)
 horizons_beta_m_exp <- c(3, 6, 12)
@@ -1569,11 +1604,13 @@ betas_all_m_exp <- tidyr::crossing(pred = pred_for_beta_m_exp,
                         labels = paste0(windows_beta_m_exp, "-month window"))
   )
 
+#Plot 
 exp_beta_120m <- plot_beta_sd_monthly(
   betas_df      = betas_all_m_exp,
   shade_regimes = FALSE
 )
 
+#Save
 ggsave(
   filename = file.path(FIG_BETA, "fig10_beta_expanding_120m.png"),
   plot     = exp_beta_120m,
@@ -1581,7 +1618,7 @@ ggsave(
 )
 
 # 14.2) Rolling Beta
-
+# Same functionality as above
 pred_for_beta_m_roll <- c("iv_skew_90_100","log_slope_quad","skew_ratio_80_110","skew_ratio_80_120")
 windows_beta_m_roll  <- c(60)
 horizons_beta_m_roll <- c(3, 6, 12)
@@ -1607,6 +1644,7 @@ betas_all_m_roll <- tidyr::crossing(pred = pred_for_beta_m_roll,
 
 regime_spans <- make_regime_spans(M_full)
 
+# Plot
 roll_beta_60m <- plot_beta_sd_monthly(
   betas_df            = betas_all_m_roll,
   regime_spans        = regime_spans,
@@ -1615,6 +1653,7 @@ roll_beta_60m <- plot_beta_sd_monthly(
   shade_regime_value  = "crisis"
 )
 
+# Save
 ggsave(
   filename = file.path(FIG_BETA, "fig13_beta_rolling_60m.png"),
   plot     = roll_beta_60m,

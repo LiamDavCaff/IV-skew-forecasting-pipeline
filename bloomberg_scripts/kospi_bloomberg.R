@@ -1,5 +1,5 @@
 ###############################################################################
-#   KOSPI-200: 30-day implied-vol surface + macro / market panel
+#   KOSPI-200: 30-day implied-vol curve + macro / market panel
 ###############################################################################
 library(dplyr)
 library(tidyr)
@@ -13,7 +13,7 @@ blpConnect()
 DATA_DIR <- "data"
 dir.create(DATA_DIR, showWarnings = FALSE)
 
-OUT_FILE <- file.path(DATA_DIR, "bbg_estox_data.rds")
+OUT_FILE <- file.path(DATA_DIR, "bbg_kospi_data.rds")
 
 # ── 1.  Define moneyness levels ──────────────────────────────────────────────
 moneyness_levels <- c("MONEY_LVL_80_0","MONEY_LVL_90_0",
@@ -42,7 +42,7 @@ iv_wide <- iv_surface_df %>%
   select(date, moneyness, implied_vol) %>% 
   pivot_wider(names_from = moneyness, values_from = implied_vol)
 
-# ── 3.  Market & macro data (USA) ──────────────────────────────────────────
+# ── 3.  Market & macro data  ──────────────────────────────────────────
 spx_tot  <- bdh("KSP2TR Index", "PX_LAST", as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, total_price = PX_LAST)
 
@@ -69,7 +69,7 @@ infl_df  <- bdh("KOCPIYOY Index", "PX_LAST",
                 as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, inflation_yoy = PX_LAST)
 
-# ── 5.  SPX fundamentals (PE, EPS, PB) ─────────────────────────────────────
+# ── 5.  KOSPI fundamentals (PE, EPS, PB) ─────────────────────────────────────
 fund_df <- bdh("KOSPI2 Index",
                c("PE_RATIO","TRAIL_12M_EPS","PX_TO_BOOK_RATIO"),
                as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 

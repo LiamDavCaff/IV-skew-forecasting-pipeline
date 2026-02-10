@@ -1,5 +1,5 @@
 ###############################################################################
-# ASX-200 : 30-day implied-vol surface + macro / market panel
+# ASX-200 : 30-day implied-vol curve + macro / market panel
 ###############################################################################
 library(dplyr)
 library(tidyr)
@@ -42,7 +42,7 @@ iv_wide <- iv_surface_df %>%
   select(date, moneyness, implied_vol) %>% 
   pivot_wider(names_from = moneyness, values_from = implied_vol)
 
-# ── 3.  Market & macro data (AUS) ──────────────────────────────────────────
+# ── 3.  Market & macro data  ──────────────────────────────────────────
 asx_tot  <- bdh("AS51T Index", "PX_LAST", as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, total_price = PX_LAST)
 
@@ -69,7 +69,7 @@ infl_df  <- bdh("AUCPIYOY Index", "PX_LAST",
                 as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, inflation_yoy = PX_LAST)
 
-# ── 5.  SPX fundamentals (PE, EPS, PB) ─────────────────────────────────────
+# ── 5.  ASX fundamentals (PE, EPS, PB) ─────────────────────────────────────
 fund_df <- bdh("AS51 Index",
                c("PE_RATIO","TRAIL_12M_EPS","PX_TO_BOOK_RATIO"),
                as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 

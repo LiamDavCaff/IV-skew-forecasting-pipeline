@@ -1,5 +1,5 @@
 ###############################################################################
-#   NASDAQ-100: 30-day implied-vol surface + macro / market panel
+#   NASDAQ-100: 30-day implied-vol curve + macro / market panel
 ###############################################################################
 library(dplyr)
 library(tidyr)
@@ -69,7 +69,7 @@ infl_df  <- bdh("CPI YOY Index", "PX_LAST",
                 as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, inflation_yoy = PX_LAST)
 
-# ── 5.  SPX fundamentals (PE, EPS, PB) ─────────────────────────────────────
+# ── 5.  NASDAQ fundamentals (PE, EPS, PB) ─────────────────────────────────────
 fund_df <- bdh("NDX Index",
                c("PE_RATIO","TRAIL_12M_EPS","PX_TO_BOOK_RATIO"),
                as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 

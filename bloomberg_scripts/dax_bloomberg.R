@@ -1,5 +1,5 @@
 ###############################################################################
-#   DAX: 30-day implied-vol surface + macro / market panel
+#   DAX: 30-day implied-vol curve + macro / market panel
 ###############################################################################
 library(dplyr)
 library(tidyr)
@@ -21,7 +21,7 @@ moneyness_levels <- c("MONEY_LVL_80_0","MONEY_LVL_90_0",
 moneyness_labels <- c("80%","90%","100%","110%","120%")
 names(moneyness_labels) <- moneyness_levels
 
-# ── 2.  Pull IV surface (underlier = SMI) ───────────────────────────────
+# ── 2.  Pull IV surface (underlier = DAX) ───────────────────────────────
 get_iv_for_moneyness <- function(level_code){
   bdh(securities = "DAX Index",              
       fields     = "IVOL_MONEYNESS",
@@ -42,7 +42,7 @@ iv_wide <- iv_surface_df %>%
   select(date, moneyness, implied_vol) %>% 
   pivot_wider(names_from = moneyness, values_from = implied_vol)
 
-# ── 3.  Market & macro data (USA) ──────────────────────────────────────────
+# ── 3.  Market & macro data  ──────────────────────────────────────────
 spx_tot  <- bdh("DAX Index", "PX_LAST", as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, total_price = PX_LAST)
 
@@ -69,7 +69,7 @@ infl_df  <- bdh("GRCP20YY Index", "PX_LAST",
                 as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 
   rename(date = date, inflation_yoy = PX_LAST)
 
-# ── 5.  SPX fundamentals (PE, EPS, PB) ─────────────────────────────────────
+# ── 5.  DAX fundamentals (PE, EPS, PB) ─────────────────────────────────────
 fund_df <- bdh("DAXK Index",
                c("PE_RATIO","TRAIL_12M_EPS","PX_TO_BOOK_RATIO"),
                as.Date("2005-01-01"), as.Date("2025-07-31")) %>% 

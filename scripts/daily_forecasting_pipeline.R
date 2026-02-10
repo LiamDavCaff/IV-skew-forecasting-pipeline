@@ -167,7 +167,7 @@ prepare_daily_for_forecasting <- function(df_daily,
                                           infl_col  = "inflation_yoy",
                                           ts_col    = "term_spread",
                                           var1m_col = "stock_var_1m",  # realized ~21d variance column
-                                          rf_basis  = 360) {           # 360 (USD/EUR/CHF), 365 (GBP/HKD/JPY/INR)
+                                          rf_basis  = 360) {           # days for risk free rate calc
   eps   <- .Machine$double.eps
   m_vec <- c(0.8, 0.9, 1.0, 1.1, 1.2)
   
@@ -180,7 +180,7 @@ prepare_daily_for_forecasting <- function(df_daily,
       logp      = log(price),
       
       # risk-free accrual to next trading day (assumes simple annualized yield)
-      rf_ann    = zoo::na.locf(.data[[rf_col]] / 100, na.rm = FALSE),  # % → decimal
+      rf_ann    = zoo::na.locf(.data[[rf_col]] / 100, na.rm = FALSE),  # % to decimal
       next_date = dplyr::lead(date),
       dcf       = as.numeric(next_date - date) / rf_basis,
       rf_piece  = dplyr::if_else(is.na(dcf), NA_real_, log1p(rf_ann * dcf)),
@@ -288,6 +288,7 @@ add_pc1_to_daily <- function(D) {
 }
 
 # ---- 4) Measure families (daily) --------------------------------------
+
 iv_levels_d   <- c("iv_80","iv_90","iv_100","iv_110","iv_120","vix_ann")
 realised_d    <- c("var_1m_mth","rv_1m_mth")
 skew_diff_d   <- c("iv_skew_80_100","iv_skew_80_110","iv_skew_80_120",
@@ -301,6 +302,7 @@ valuation_macro_d <- c("log_ep","log_bm","t3m_yield","lty_yield","term_spread","
 
 # ---- 5) Build daily panel (cache once) --------------------------------
 
+# Create daily data set and add in excess returns
 D_full <- data %>%
   prepare_daily_for_forecasting() %>%
   add_excess_returns_daily(c(1,2,3,5,10,15,21,63,126,252)) %>%
@@ -320,41 +322,48 @@ oos_stats_fast_daily <- function(
     benchmark  = c("rolling","expanding"),
     window_type= c("rolling","expanding")
 ) {
+  
+  # Ensure benchmark and window_type are one of the allowed options
   benchmark   <- match.arg(benchmark)
   window_type <- match.arg(window_type)
   
+  # loop over horiozns and return vector of oos stats for each horizon
   vapply(
     horizons_days,
     function(h) {
-      y <- D[[paste0("excess_", h, "d")]]
+      
+      # dependent variable:
+      y <- D[[paste0("excess_", h, "d")]]  # Dependent variable: h-day ahead excess return series, e.g. "excess_21d"
       X <- as.matrix(D[, pred, drop = FALSE])
       
       ols <- get_ols_forecasts(
-        y, X, h_days = h,   # argument name irrelevant; just pass h
+        y, X, h_days = h,   #pass horizon length to helper
         window_days = window_days,
         window_type   = window_type
       )
-      f_mod <- ols$f_mod
+      f_mod <- ols$f_mod  # model error
       betas <- ols$betas
       
+      # construct rolling/expanding historical benchmark means 
       f_bm <- if (benchmark == "rolling") {
         roll_mean_lag1(y, window_days)
       } else {
         exp_mean_lag1(y)
       }
       
+      # Ensure full observations (ie so we have model, benchamrk and actual)(y)
       ok <- which(is.finite(f_mod) & is.finite(f_bm) & is.finite(y))
       if (length(ok) < 40)
         return(c(R2_raw=NA, cw_stat=NA, cw_p=NA, beta_avg=NA))
       
-      y_act <- y[ok]
-      err_m <- y_act - f_mod[ok]
-      err_b <- y_act - f_bm[ok]
+      y_act <- y[ok] # Actual realised return
+      err_m <- y_act - f_mod[ok]  #model error
+      err_b <- y_act - f_bm[ok] #benchmark error
       
-      R2_raw <- 100 * (1 - sum(err_m^2) / sum(err_b^2))
+      R2_raw <- 100 * (1 - sum(err_m^2) / sum(err_b^2))#Campbell-Thomson R^2 for OOS
       
-      adj_loss <- err_b^2 - (err_m^2 - (f_bm[ok] - f_mod[ok])^2)
-      cw_var   <- sandwich::NeweyWest(lm(adj_loss ~ 1), lag = h, prewhite = FALSE)[1,1]
+      adj_loss <- err_b^2 - (err_m^2 - (f_bm[ok] - f_mod[ok])^2) #Clark west adjusted loss differential
+      cw_var   <- sandwich::NeweyWest(lm(adj_loss ~ 1), lag = h, prewhite = FALSE)[1,1] #HAC variance of mean(adj_loss) [using lag = h]
       cw_stat  <- mean(adj_loss) / sqrt(cw_var)
       cw_p     <- pnorm(cw_stat, lower.tail = FALSE)
       
@@ -373,74 +382,17 @@ oos_stats_fast_daily <- function(
 
 # ---- 7) OOS Master Compute of Results (daily) ------------------------
 
-compute_oos_paths_raw_daily <- function(
-    D,
-    pred,
-    h_days,
-    window_days,
-    benchmark   = c("rolling","expanding"),
-    window_type = c("rolling","expanding"),
-    min_points  = 12,
-    eps         = 1e-12
-) {
-  benchmark   <- match.arg(benchmark)
-  window_type <- match.arg(window_type)
-  
-  y <- D[[paste0("excess_", h_days, "d")]]
-  X <- as.matrix(D[, pred, drop = FALSE])
-  
-  ols <- get_ols_forecasts(
-    y          = y,
-    X          = X,
-    h_days     = h_days,
-    window_days= window_days,
-    window_type= window_type
-  )
-  f_mod <- ols$f_mod
-  
-  f_bm <- if (benchmark == "rolling") {
-    roll_mean_lag1(y, window_days)
-  } else {
-    exp_mean_lag1(y)
-  }
-  
-  ok_idx <- which(is.finite(y) & is.finite(f_mod) & is.finite(f_bm))
-  if (length(ok_idx) < min_points) return(tibble())
-  
-  y_ok <- y[ok_idx]
-  em   <- y_ok - f_mod[ok_idx]
-  eb   <- y_ok - f_bm[ok_idx]
-  
-  cm <- cumsum(em^2); cb <- cumsum(eb^2)
-  start <- min_points
-  idx   <- start:length(ok_idx)
-  R2cum <- 100 * (1 - cm[idx] / pmax(cb[idx], eps))
-  
-  tibble(
-    date         = D$date[ok_idx][idx],
-    cum_R2_raw   = R2cum,
-    horizon      = paste0(h_days, "d"),
-    window_days  = window_days,
-    predictor    = pred,
-    benchmark    = benchmark,
-    window_type  = window_type
-  )
-}
-
-
 compute_oos_suite_daily <- function(
     D,
     predictors,
     windows_days,
     horizons_days,
     benchmarks   = c("rolling","expanding"),
-    window_type  = c("rolling","expanding"),
-    min_points   = 12
+    window_type  = c("rolling","expanding")
 ) {
   benchmarks  <- match.arg(benchmarks, several.ok = TRUE)
   window_type <- match.arg(window_type)
   
-  # Summary table
   results_table <- tidyr::crossing(
     predictor    = predictors,
     window_days  = windows_days,
@@ -466,53 +418,25 @@ compute_oos_suite_daily <- function(
         benchmark    = benchmark,
         window_type  = window_type,
         R2_oos_raw   = round(o["R2_raw", ], 3),
-        cw_stat      = as.numeric(o["cw_stat", ]),
-        cw_p_raw     = as.numeric(o["cw_p", ]),   # <-- keep RAW p
-        beta_avg     = round(o["beta_avg",], 6)
+        cw_p_raw     = as.numeric(o["cw_p", ])   # keep if you want CW significance overlays
       )
     }) %>%
-    # ---------- MULTIPLE TESTING FIX ----------
-  # Within each horizon (and benchmark + window_type),
-  # adjust across predictor × window_days
-  dplyr::group_by(benchmark, window_type, horizon) %>%
+    # BH-FDR within each horizon (benchmark + window_type fixed)
+    dplyr::group_by(benchmark, window_type, horizon) %>%
     dplyr::mutate(cw_q_h = bh_adjust(cw_p_raw)) %>%
     dplyr::ungroup() %>%
-    # Optional: global within benchmark+window_type across ALL horizons too
+    # Optional global adjustment within benchmark + window_type
     dplyr::group_by(benchmark, window_type) %>%
     dplyr::mutate(cw_q_global_bench = bh_adjust(cw_p_raw)) %>%
-    dplyr::ungroup() 
+    dplyr::ungroup()
   
-  # Cum R² paths (unchanged)
-  paths_df <- tidyr::crossing(
-    predictor    = predictors,
-    window_days  = windows_days,
-    horizon      = horizons_days,
-    benchmark    = benchmarks
-  ) %>%
-    purrr::pmap_dfr(function(predictor, window_days, horizon, benchmark) {
-      compute_oos_paths_raw_daily(
-        D            = D,
-        pred         = predictor,
-        h_days       = horizon,
-        window_days  = window_days,
-        benchmark    = benchmark,
-        window_type  = window_type,
-        min_points   = min_points
-      )
-    }) %>%
-    dplyr::mutate(
-      window_lab = factor(
-        paste0(window_days, "d Window"),
-        levels = paste0(sort(unique(window_days)), "d Window")
-      )
-    )
-  
-  list(results_table = results_table, paths_df = paths_df)
+  list(results_table = results_table)
 }
-
 
 # ---- 8) OOS Plots (daily) --------------------------------------------
 
+
+# Function to build heatmap
 plot_heatmap_raw_daily <- function(results, bm = NULL, alpha_txt = 0.85,
                                    sig_level = 0.10,
                                    p_col = c("cw_q_h", "cw_p_raw"),
@@ -563,38 +487,7 @@ plot_heatmap_raw_daily <- function(results, bm = NULL, alpha_txt = 0.85,
 }
 
 
-plot_oos_trend_through_time_raw_daily <- function(paths_df,
-                                                  facet_by = c("window", "predictor")) {
-  facet_by <- match.arg(facet_by)
-  
-  df <- paths_df %>%
-    dplyr::mutate(
-      horizon_num = readr::parse_number(horizon),
-      horizon     = factor(
-        horizon,
-        levels = paste0(sort(unique(horizon_num)), "d")
-      )
-    )
-  
-  g <- ggplot(df, aes(date, cum_R2_raw, colour = horizon, group = horizon)) +
-    geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3, alpha = 0.6) +
-    geom_line(linewidth = 0.8, na.rm = TRUE) +
-    labs(
-      y      = expression("Cumulative " * R[OOS]^2 * " (%)"),
-      x      = NULL,
-      colour = "Horizon"
-    ) +
-    theme_minimal(base_size = 11) +
-    theme(strip.text = element_text(face = "bold"))
-  
-  if (facet_by == "window") {
-    g + facet_wrap(~ window_lab, ncol = 2, scales = "free_x")
-  } else {
-    g + facet_wrap(~ predictor, ncol = 2, scales = "free_x")
-  }
-}
-
-# ---- 9) Build OOS  plots (daily) ----------------------
+# ---- 9) Build OOS plots (daily) ----------------------
 
 # 9.1 Expanding OOS result
 
@@ -614,7 +507,6 @@ oos_all_exp_d <- compute_oos_suite_daily(
 )
 
 results_table_exp_d <- oos_all_exp_d$results_table
-paths_df_exp_d     <- oos_all_exp_d$paths_df
 
 # Expanding Heatmap
 fig15_d <- plot_heatmap_raw_daily(

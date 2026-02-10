@@ -7,7 +7,7 @@
 # - Builds monthly panels for each index
 # - Runs OOS R² + Clark–West for chosen IV skews
 # - Produces heatmap: indices × horizons × window lengths,
-#   faceted by predictor (auto-labelled)
+#   faceted by predictor 
 # - Multiple-testing: BH-adjust CW p-values within each (benchmark, window_type, horizon)
 # - Significance = (q_BH <= FDR_LEVEL) & (R2 > 0)
 # ===========================================================
@@ -126,7 +126,7 @@ bh_adjust <- function(p) {
 
 prepare_monthly_for_forecasting <- function(df_daily,
                                             date_col  = "date",
-                                            price_col = "total_price", # TRI
+                                            price_col = "total_price", # TRI (total return inde( price + dividends))
                                             spot_col  = "price",       # spot index
                                             rf_col    = "rfr_1m",      # annualised %, 1m
                                             vix_col   = "vix",
@@ -144,26 +144,38 @@ prepare_monthly_for_forecasting <- function(df_daily,
                                             var1m_col = "stock_var_1m",
                                             rf_basis  = 360) {
   
-  eps   <- .Machine$double.eps
-  m_vec <- c(0.8, 0.9, 1.0, 1.1, 1.2)
+  eps   <- .Machine$double.eps # constant to avod log(0)
+  m_vec <- c(0.8, 0.9, 1.0, 1.1, 1.2) #moneyness grid for the quadratic fit in log-moneyness space
   
+  #daily prep: align dayes, build daily log price and daily rf pieces
   Dd <- df_daily %>%
     dplyr::arrange(.data[[date_col]]) %>%
     dplyr::mutate(
+      
+      #standardise date and pull key price series
       date        = as.Date(.data[[date_col]]),
-      price       = .data[[price_col]],
-      spot_price  = .data[[spot_col]],
+      price       = .data[[price_col]],     # total return index (TRI)
+      spot_price  = .data[[spot_col]],      # spot index for valuation ratios
       logp_d      = log(price),
       
+      # Risk free rate converted to decimals and LOCF fill
       rf_ann      = zoo::na.locf(.data[[rf_col]] / 100, na.rm = FALSE),
+      
+      # next calandar day (needed for day count fraction)
       next_date   = dplyr::lead(date),
+      
+      # rf basis day count fraction from date to next_date
       dcf         = as.numeric(next_date - date) / rf_basis,
+      
+      # onde day log risk free piece = log(1+rf *dcf)
       rf_piece    = dplyr::if_else(is.na(dcf), NA_real_, log1p(rf_ann * dcf)),
       
+      #month start tags the current days month; month end tags month where accrual ends
       month_start = floor_date(date, "month"),
       month_end   = floor_date(next_date, "month")
     )
   
+  # Monthly RF: sum daily rf peices whose accrual ends in month m
   rf_by_endmonth <- Dd %>%
     dplyr::group_by(month = month_end) %>%
     dplyr::summarise(
@@ -174,18 +186,24 @@ prepare_monthly_for_forecasting <- function(df_daily,
       .groups = "drop"
     )
   
+  # Daily feature engineering
   M <- Dd %>%
     dplyr::mutate(
+      # carry forward any slow moving fundamentals
       eps_ttm     = zoo::na.locf(.data[[eps_col]], na.rm = FALSE),
       book        = zoo::na.locf(.data[[bvps_col]], na.rm = FALSE),
       t3m_yield   = zoo::na.locf(.data[[t3m_col]],   na.rm = FALSE),
       lty_yield   = zoo::na.locf(.data[[lty_col]],   na.rm = FALSE),
       term_spread = zoo::na.locf(.data[[ts_col]],    na.rm = FALSE),
+      
+      #Inflation: snap back if stale and then fill forward with gap constraint
       infl_step   = snap_back_then_ffill(.data[[infl_col]], date, maxgap = 3),
       
+      # Daily valuation ratios
       log_ep_d    = log(pmax(eps_ttm, eps) / pmax(spot_price, eps)),
       log_bm_d    = log(pmax(book,   eps) / pmax(spot_price, eps)),
       
+      # Daily IV levels converted to decimals
       iv_80_d     = .data[[m80_col]]  / 100,
       iv_90_d     = .data[[m90_col]]  / 100,
       iv_100_d    = .data[[m100_col]] / 100,
@@ -193,9 +211,12 @@ prepare_monthly_for_forecasting <- function(df_daily,
       iv_120_d    = .data[[m120_col]] / 100,
       vix_ann_d   = .data[[vix_col]]  / 100,
       
+      # Daily realised variance and volatility
       var_1m_d    = .data[[var1m_col]],
       rv_1m_d     = sqrt(var_1m_d)
     ) %>%
+    
+    # collapse daily data to month end
     dplyr::group_by(month = month_start) %>%
     dplyr::summarise(
       iv_80         = last_non_na(iv_80_d),
@@ -207,9 +228,12 @@ prepare_monthly_for_forecasting <- function(df_daily,
       var_1m_mth    = last_non_na(var_1m_d),
       rv_1m_mth     = last_non_na(rv_1m_d),
       
+      # Monthly price level and monthly log price
       price         = last_non_na(price),
       rfr_1m        = last_non_na(.data[[rf_col]]),
       logp          = log(price),
+      
+      # month end valuation ratios/macro variables
       log_ep        = last_non_na(log_ep_d),
       log_bm        = last_non_na(log_bm_d),
       t3m_yield     = last_non_na(t3m_yield),
@@ -218,11 +242,16 @@ prepare_monthly_for_forecasting <- function(df_daily,
       inflation_yoy = last_non_na(infl_step),
       .groups       = "drop"
     ) %>%
+    
+    # add monthly rd returns
     dplyr::arrange(month) %>%
     dplyr::left_join(rf_by_endmonth, by = "month")
   
+  # Monthly skew measures 
   M <- M %>%
     dplyr::mutate(
+      
+      # Skew differences
       iv_skew_80_100    = iv_80 - iv_100,
       iv_skew_80_110    = iv_80 - iv_110,
       iv_skew_80_120    = iv_80 - iv_120,
@@ -230,6 +259,7 @@ prepare_monthly_for_forecasting <- function(df_daily,
       iv_skew_90_110    = iv_90 - iv_110,
       iv_skew_90_120    = iv_90 - iv_120,
       
+      #Skew ratios
       skew_ratio_80_100 = log(pmax(iv_80,  eps) / pmax(iv_100, eps)),
       skew_ratio_90_100 = log(pmax(iv_90,  eps) / pmax(iv_100, eps)),
       skew_ratio_80_110 = log(pmax(iv_80,  eps) / pmax(iv_110, eps)),
@@ -237,24 +267,35 @@ prepare_monthly_for_forecasting <- function(df_daily,
       skew_ratio_80_120 = log(pmax(iv_80,  eps) / pmax(iv_120, eps)),
       skew_ratio_90_120 = log(pmax(iv_90,  eps) / pmax(iv_120, eps)),
       
+      # Wing slope/curvature in levels across moneyness (0.8 -> 1.2 is width 0.4)
       wing_slope  = (iv_120 - iv_80) / 0.4,
       wing_curve  = (iv_120 - 2*iv_100 + iv_80) / (0.2^2),
       
+      # Convert annualised VIX to 1-month implied vol/variance (21 trading days)
       iv_imp_1m   = vix_ann * sqrt(21/252),
       var_imp_1m  = vix_ann^2 * (21/252),
+      
+      # Volatility/variance risk premia: implied minus realised
       vol_prem_1m = iv_imp_1m  - rv_1m_mth,
       var_prem_1m = var_imp_1m - var_1m_mth
     )
   
+  # Quadratic fit in log moneyness space
+  # Store b as slope and 2c as curavture
   mk <- log(m_vec)
+  
+  # For each month. fit quadratic to log IV across moneyness pts 
   coefs_log <- purrr::pmap(list(M$iv_80, M$iv_90, M$iv_100, M$iv_110, M$iv_120), ~{
     v <- log(pmax(c(..1, ..2, ..3, ..4, ..5), eps))
     if (all(is.finite(v))) lm(v ~ mk + I(mk^2))$coefficients
     else c("(Intercept)" = NA_real_, "mk" = NA_real_, "I(mk^2)" = NA_real_)
   })
+  
+  #Extract b and c terms across months
   b_log <- purrr::map_dbl(coefs_log, ~ .x[["mk"]])
   c_log <- purrr::map_dbl(coefs_log, ~ .x[["I(mk^2)"]])
   
+  # Save monthly slope/curvature
   M$log_slope_quad <- b_log
   M$log_curve_quad <- 2 * c_log
   
@@ -268,6 +309,7 @@ INDEX_LIST <- purrr::map(INDEX_PATHS, readRDS)
 
 iv_cols <- c("80%", "90%", "100%", "110%", "120%")
 
+# Use to check when we have full IV across moneyness pts 
 iv_coverage_daily <- purrr::map_dfr(names(INDEX_LIST), function(idx) {
   df <- INDEX_LIST[[idx]] %>%
     dplyr::mutate(
@@ -363,21 +405,31 @@ build_monthly_for_index <- function(df_daily,
 # ---- 7) OOS forecasting for 1 index ---------------------------------------------
 
 get_ols_forecasts_univariate <- function(y, x, h_months, window_months, window_type) {
-  n      <- length(y)
-  f_mod  <- rep(NA_real_, n)
+  n      <- length(y) #number of observations
+  
+  #vectors to store forecasts and beta at each time
+  f_mod  <- rep(NA_real_, n) 
   beta_t <- rep(NA_real_, n)
   
   for (i in seq_len(n)) {
+    
+    # get estimation window incides for forecast origin
     idx <- get_window_indices(i, window_months, window_type)
     if (is.null(idx)) next
-    yi <- y[idx]; xi <- x[idx]
-    ok <- is.finite(yi) & is.finite(xi)
-    if (sum(ok) < window_months) next
     
+    # get estimation sample for y and x values for window
+    yi <- y[idx]; xi <- x[idx]
+    ok <- is.finite(yi) & is.finite(xi) # only keep rows where both y and x have data
+    if (sum(ok) < window_months) next # require a full window of observations before estimating
+    
+    #fit the predictive regression y~x
     fit <- lm(yi[ok] ~ xi[ok])
+    
+    # extract coeficients cf[1] = intercept and cf[2] =slope
     cf  <- coef(fit)
     if (length(cf) < 2L) next
     
+    # store slope estimates
     beta_t[i] <- cf[2]
     if (is.finite(x[i])) {
       f_mod[i] <- cf[1] + cf[2] * x[i]
@@ -385,6 +437,7 @@ get_ols_forecasts_univariate <- function(y, x, h_months, window_months, window_t
   }
   list(f_mod = f_mod, beta_t = beta_t)
 }
+
 
 oos_stats_one_index <- function(M,
                                 horizons_months,
@@ -394,47 +447,74 @@ oos_stats_one_index <- function(M,
                                 window_type,
                                 min_points) {
   
+  # Loop over horizons h and return a named vector of OOS statistics for each horizon
   vapply(
     horizons_months,
     function(h) {
       
+      # y variable: h-month ahead excess return series (e.g. "excess_12m")
       y <- M[[paste0("excess_", h, "m")]]
+      
+      # Univariate predictor series
       x <- M[[pred]]
       
+      # Generate rolling/expanding univariate OLS forecasts:
+      # f_mod = model forecast at each time t
+      # b_t   = estimated slope coefficient (beta) at each time t
       ols   <- get_ols_forecasts_univariate(y, x, h, window_months, window_type)
       f_mod <- ols$f_mod
       b_t   <- ols$beta_t
       
+      # Construct benchmark forecast:
+      # rolling: rolling historical mean (lagged)
+      # expanding: expanding historical mean (lagged)
       f_bm <- if (benchmark == "rolling") {
         roll_mean_lag1(y, window_months)
       } else {
         exp_mean_lag1(y)
       }
       
+      # Keep dates where model forecast, benchmark forecast, and realised y are all available
       ok <- which(is.finite(f_mod) & is.finite(f_bm) & is.finite(y))
+      
+      #Minimum number of OOS observations to compute stable statistics
       if (length(ok) < min_points) {
         return(c(R2_raw=NA_real_, cw_stat=NA_real_, cw_p=NA_real_, beta_avg=NA_real_))
       }
       
+      # Realised returns and forecast errors on the valid OOS dates
       y_ok <- y[ok]
-      e_m  <- y_ok - f_mod[ok]
-      e_b  <- y_ok - f_bm[ok]
+      e_m  <- y_ok - f_mod[ok]  # model error
+      e_b  <- y_ok - f_bm[ok]   # benchmark error
       
+      # Campbell-thompson style OOS R^2
       R2_raw <- 100 * (1 - sum(e_m^2) / sum(e_b^2))
       
+      # Clark–West adjusted loss differential for nested models
       adj_loss <- e_b^2 - (e_m^2 - (f_bm[ok] - f_mod[ok])^2)
+      
+      # Estimate mean(adj_loss) via intercept-only regression
       cw_fit   <- lm(adj_loss ~ 1)
+      
+      # HAC variance of the intercept using Newey–West with lag = h 
       V        <- sandwich::NeweyWest(cw_fit, lag = h, prewhite = FALSE)
+      
+      # Clark–West test statistic and one-sided p-value
       cw_stat  <- coef(cw_fit)[1] / sqrt(V[1, 1])
       cw_p     <- pnorm(cw_stat, lower.tail = FALSE)
       
+      # Average beta over the OOS-valid evaluation period (useful for interpreting sign/magnitude)
       beta_avg <- mean(b_t[ok], na.rm = TRUE)
       
+      # Return stats for this horizon
       c(R2_raw=R2_raw, cw_stat=cw_stat, cw_p=cw_p, beta_avg=beta_avg)
     },
+    
+    # vapply template: ensures numeric output with consistent names
     FUN.VALUE = c(R2_raw=NA_real_, cw_stat=NA_real_, cw_p=NA_real_, beta_avg=NA_real_)
   )
 }
+
 
 
 # ---- 8) Run Forecasts Across All Indices ----------------------------------------
