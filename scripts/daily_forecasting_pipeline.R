@@ -28,8 +28,13 @@ suppressPackageStartupMessages(
 # ---- 0.1) Project root + output folders ------------------------------------------------------
 
 ROOT <- here::here()
-FIG_DAILY <- file.path("outputs", "daily", "figures")
-dir.create(FIG_DAILY, recursive = TRUE, showWarnings = FALSE)
+
+FIG_DAILY <- file.path(ROOT, "outputs", "daily", "figures")
+TAB_DAILY <- file.path(ROOT, "outputs", "daily", "tables")
+TAB_OOS_D <- file.path(TAB_DAILY, "01_oos")
+
+dirs <- c(FIG_DAILY, TAB_OOS_D)
+invisible(lapply(dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
 
 # ---- 1) Load data --------------------------------------------------------
 
@@ -412,13 +417,15 @@ compute_oos_suite_daily <- function(
       )
       
       tibble::tibble(
-        predictor    = predictor,
-        window_days  = window_days,
-        horizon      = paste0(horizon, "d"),
-        benchmark    = benchmark,
-        window_type  = window_type,
-        R2_oos_raw   = round(o["R2_raw", ], 3),
-        cw_p_raw     = as.numeric(o["cw_p", ])   # keep if you want CW significance overlays
+        predictor     = predictor,
+        window_days   = window_days,
+        horizon       = paste0(horizon, "d"),
+        benchmark     = benchmark,
+        window_type   = window_type,
+        R2_oos_raw    = round(o["R2_raw", ], 3),
+        cw_stat       = as.numeric(o["cw_stat", ]),
+        cw_p_raw      = as.numeric(o["cw_p", ]),
+        beta_avg      = round(as.numeric(o["beta_avg", ]), 6)   
       )
     }) %>%
     # BH-FDR within each horizon (benchmark + window_type fixed)
@@ -508,15 +515,22 @@ oos_all_exp_d <- compute_oos_suite_daily(
 
 results_table_exp_d <- oos_all_exp_d$results_table
 
+# Save full expanding-window OOS result grid
+readr::write_csv(
+  results_table_exp_d,
+  file.path(TAB_OOS_D, "daily_oos_expanding_results.csv")
+)
+
 # Expanding Heatmap
 fig15_d <- plot_heatmap_raw_daily(
   results_table_exp_d,
   bm = benchmarks_exp_d,
   predictor_order = pred_vars_exp_d,
   sig_level = 0.10,
-  p_col = "cw_q_h"     # <-- FDR-corrected significance
+  p_col = "cw_q_h"     # <-- FDR-family significance; or use "cw_q_global_bench" for global
 )
 
+# Save full expanding-window OOS heatmap
 ggsave(
   filename = file.path(FIG_DAILY, "fig15_heatmap_oos_monthly_Expanding_Daily.png"),
   plot     = fig15_d,
@@ -543,15 +557,22 @@ oos_all_roll_d <- compute_oos_suite_daily(
 results_table_roll_d <- oos_all_roll_d$results_table
 paths_df_roll_d      <- oos_all_roll_d$paths_df
 
-# Expanding Heatmap
+# Save full rolling window OOS result grid
+readr::write_csv(
+  results_table_roll_d,
+  file.path(TAB_OOS_D, "daily_oos_rolling_results.csv")
+)
+
+# Rolling Heatmap
 fig16_d <- plot_heatmap_raw_daily(
   results_table_roll_d,
   bm = benchmarks_roll_d,
   predictor_order = pred_vars_roll_d,
   sig_level = 0.10,
-  p_col = "cw_q_h"     # <-- FDR-corrected significance
+  p_col = "cw_q_h"     # <-- FDR-family significance; or use "cw_q_global_bench" for global
 )
 
+# Save full rolling window OOS heatmap
 ggsave(
   filename = file.path(FIG_DAILY, "fig16_heatmap_oos_monthly_Rolling_Daily.png"),
   plot     = fig16_d,

@@ -1,13 +1,31 @@
+# ---------------------------------------------------------
+# R / RSTUDIO LOCAL FILES
+# ---------------------------------------------------------
+
 # History files
 .Rhistory
 .Rapp.history
 
-# Session Data files
+# Session data files
 .RData
 .RDataTmp
 
 # User-specific files
 .Ruserdata
+
+# R environment variables / credentials
+.Renviron
+
+# RStudio files
+.Rproj.user/
+
+# RStudio Connect folder
+rsconnect/
+
+
+# ---------------------------------------------------------
+# R PACKAGE / BUILD FILES
+# ---------------------------------------------------------
 
 # Example code in package build process
 *-Ex.R
@@ -18,41 +36,80 @@
 # Output files from R CMD check
 /*.Rcheck/
 
-# RStudio files
-.Rproj.user/
-
-# produced vignettes
+# Produced vignettes
 vignettes/*.html
 vignettes/*.pdf
-
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
-*_cache/
-/cache/
-
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
-
-# R Environment Variables
-.Renviron
 
 # pkgdown site
 docs/
 
-# translation temp files
+# Translation temporary files
 po/*~
 
-# RStudio Connect folder
-rsconnect/
 
-# ignore data contents but keep placeholder
+# ---------------------------------------------------------
+# CACHE / TEMPORARY FILES
+# ---------------------------------------------------------
+
+# OAuth2 token
+.httr-oauth
+
+# knitr and R Markdown cache directories
+*_cache/
+/cache/
+
+# Temporary files created by R Markdown
+*.utf8.md
+*.knit.md
+
+
+# ---------------------------------------------------------
+# PROPRIETARY SOURCE DATA
+# ---------------------------------------------------------
+
+# Ignore all Bloomberg/source data
 data/*
+
+# Retain the empty data folder in the repository
 !data/.gitkeep
 
-# ignore all outputs but keep placeholders (folder structure)
+
+# ---------------------------------------------------------
+# GENERATED OUTPUTS
+# ---------------------------------------------------------
+
+# Ignore all generated outputs by default
 outputs/**
+
+# Allow Git to retain the output folder structure
 !outputs/**/
+
+# Keep .gitkeep placeholder files in output folders
 !outputs/**/.gitkeep
+
+
+# ---------------------------------------------------------
+# PUBLIC DERIVED RESULT GRIDS
+# ---------------------------------------------------------
+
+# These selected machine-readable statistical outputs are
+# intentionally tracked for dissertation reproducibility.
+# They contain derived model results only and not the
+# underlying Bloomberg observations.
+
+
+# Monthly - in-sample results
+!outputs/monthly/tables/02_insample/Tab7_insample_results_long.csv
+!outputs/monthly/tables/02_insample/Tab7_insample_controls_vix_results_long.csv
+
+# Monthly - out-of-sample results
+!outputs/monthly/tables/03_oos/monthly_oos_expanding_results.csv
+!outputs/monthly/tables/03_oos/monthly_oos_rolling_results.csv
+
+# Daily - out-of-sample results
+!outputs/daily/tables/01_oos/daily_oos_expanding_results.csv
+!outputs/daily/tables/01_oos/daily_oos_rolling_results.csv
+
+# Cross-market - out-of-sample results
+!outputs/cross_market/tables/01_oos/cross_market_oos_expanding_results.csv
+!outputs/cross_market/tables/01_oos/cross_market_oos_rolling_results.csv

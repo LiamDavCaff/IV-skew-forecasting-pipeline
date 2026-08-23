@@ -35,10 +35,23 @@ suppressPackageStartupMessages(
 ROOT <- here::here()
 
 OUT_FIG_XM <- file.path(ROOT, "outputs", "cross_market", "figures")
-OUT_TAB_XM <- file.path(ROOT, "outputs", "cross_market", "appendix")
+OUT_TAB_XM <- file.path(ROOT, "outputs", "cross_market", "tables")
 
-dir.create(OUT_FIG_XM, recursive = TRUE, showWarnings = FALSE)
-dir.create(OUT_TAB_XM, recursive = TRUE, showWarnings = FALSE)
+TAB_OOS_XM <- file.path(OUT_TAB_XM, "01_oos")
+TAB_APP_XM <- file.path(OUT_TAB_XM, "02_appendix")
+
+dirs <- c(
+  OUT_FIG_XM,
+  TAB_OOS_XM,
+  TAB_APP_XM
+)
+
+invisible(lapply(
+  dirs,
+  dir.create,
+  recursive = TRUE,
+  showWarnings = FALSE
+))
 
 # ---- 1) load data -----------------------------------------------------------
 
@@ -371,7 +384,7 @@ TabC3 <- iv_coverage_daily %>%
 
 kableExtra::save_kable(
   TabC3,
-  file = file.path(OUT_TAB_XM, "TabC1_iv_coverage_daily.tex")
+  file = file.path(TAB_APP_XM, "TabC1_iv_coverage_daily.tex")
 )
 
 
@@ -552,7 +565,8 @@ run_oos_across_indices <- function(index_files, predictor,
           benchmark     = benchmark,
           window_type   = window_type,
           R2_oos_raw    = as.numeric(o["R2_raw", ]),
-          cw_p_raw      = as.numeric(o["cw_p", ]),     # keep raw p-values for BH
+          cw_stat       = as.numeric(o["cw_stat", ]),
+          cw_p_raw      = as.numeric(o["cw_p", ]), # Keep raw p-values for BH
           beta_avg      = as.numeric(o["beta_avg", ])
         )
       })
@@ -651,14 +665,41 @@ results_exp <- purrr::map_dfr(PREDICTORS_CROSS_EXP, function(pred) {
   )
 })
 
-# MULTIPLE TESTING  (same logic as your monthly suite
+# MULTIPLE TESTING  (same logic as the monthly suite
 # Within each (benchmark, window_type, horizon) slice, adjust CW p-values
 # across all indices × predictors × windows in that slice.
 results_exp <- results_exp %>%
-  group_by(benchmark, window_type, window_months, predictor,horizon) %>%
-  mutate(cw_q_h = bh_adjust(cw_p_raw)) %>%
+  group_by(
+    benchmark,
+    window_type,
+    window_months,
+    predictor,
+    horizon
+  ) %>%
+  mutate(
+    cw_q_h = bh_adjust(cw_p_raw)
+  ) %>%
+  ungroup() %>%
+  
+  # Broader global robustness adjustment across the
+  # full expanding cross-market result grid
+  group_by(
+    benchmark,
+    window_type
+  ) %>%
+  mutate(
+    cw_q_global_bench = bh_adjust(cw_p_raw)
+  ) %>%
   ungroup()
 
+# Save full expanding cross-market OOS result grid
+readr::write_csv(
+  results_exp,
+  file.path(
+    TAB_OOS_XM,
+    "cross_market_oos_expanding_results.csv"
+  )
+)
 
 fig17_cross_exp <- plot_heatmap_indices_both(
   results_exp,
@@ -666,6 +707,7 @@ fig17_cross_exp <- plot_heatmap_indices_both(
   fdr_level = FDR_LEVEL
 )
 
+# Save full expanding cross-market OOS heatmap
 ggsave(
   filename = file.path(OUT_FIG_XM, "fig17_cross_heatmap_expanding.png"),
   plot     = fig17_cross_exp,
@@ -701,7 +743,7 @@ TabC4 <- knitr::kable(
   escape    = TRUE   
 )
 
-writeLines(TabC4, file.path(OUT_TAB_XM, "TabC2_cross_market_significant_exp.tex"))
+writeLines(TabC4, file.path(TAB_APP_XM, "TabC2_cross_market_significant_exp.tex"))
 
 # ---- 11) Rolling Window Results ------------------------------
 
@@ -730,17 +772,46 @@ results_roll <- purrr::map_dfr(PREDICTORS_CROSS_ROLL, function(pred) {
 # Within each (benchmark, window_type, horizon) slice, adjust CW p-values
 # across all indices × predictors × windows in that slice.
 results_roll <- results_roll %>%
-  group_by(benchmark, window_type, window_months, predictor,horizon) %>%
-  mutate(cw_q_h = bh_adjust(cw_p_raw)) %>%
+  group_by(
+    benchmark,
+    window_type,
+    window_months,
+    predictor,
+    horizon
+  ) %>%
+  mutate(
+    cw_q_h = bh_adjust(cw_p_raw)
+  ) %>%
+  ungroup() %>%
+  
+  # Broader global robustness adjustment across the
+  # full rolling cross-market result grid
+  group_by(
+    benchmark,
+    window_type
+  ) %>%
+  mutate(
+    cw_q_global_bench = bh_adjust(cw_p_raw)
+  ) %>%
   ungroup()
 
+# Save full rolling cross-market OOS result grid
+readr::write_csv(
+  results_roll,
+  file.path(
+    TAB_OOS_XM,
+    "cross_market_oos_rolling_results.csv"
+  )
+)
 
+# Save full rolling cross-market OOS result grid
 fig18_cross_roll <- plot_heatmap_indices_both(
   results_roll,
   predictors_cross = PREDICTORS_CROSS_ROLL,
   fdr_level = FDR_LEVEL
 )
 
+# Save full rolling cross-market OOS heatmap
 ggsave(
   filename = file.path(OUT_FIG_XM, "fig18_cross_heatmap_rolling.png"),
   plot     = fig18_cross_roll,
@@ -776,4 +847,4 @@ TabC5 <- knitr::kable(
   escape    = TRUE   
 )
 
-writeLines(TabC5, file.path(OUT_TAB_XM, "TabC3_cross_market_significant_roll.tex"))
+writeLines(TabC5, file.path(TAB_APP_XM, "TabC3_cross_market_significant_roll.tex"))

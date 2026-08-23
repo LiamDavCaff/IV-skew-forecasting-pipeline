@@ -41,9 +41,10 @@ FIG_APP  <- file.path(OUT_FIG, "05_appendix")
 
 TAB_EDA  <- file.path(OUT_TAB, "01_eda")
 TAB_IS   <- file.path(OUT_TAB, "02_insample")
-TAB_APP  <- file.path(OUT_TAB, "03_appendix")
+TAB_OOS  <- file.path(OUT_TAB, "03_oos")
+TAB_APP  <- file.path(OUT_TAB, "04_appendix")
 
-dirs <- c(FIG_EDA, FIG_BETA, FIG_HM, FIG_PATH, FIG_APP, TAB_EDA, TAB_IS, TAB_APP)
+dirs <- c(FIG_EDA, FIG_BETA, FIG_HM, FIG_PATH, FIG_APP, TAB_EDA, TAB_IS, TAB_OOS, TAB_APP)
 invisible(lapply(dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
 
 # ---- 1) Load data --------------------------------------------------------
@@ -1198,7 +1199,7 @@ compute_oos_suite_monthly <- function(
 #Function to plot Heatmaps
 plot_heatmap_raw_monthly <- function(results, bm = NULL, alpha_txt = 0.85,
                                      sig_level = 0.10,
-                                     p_col = c("cw_q_h", "cw_p_raw"),
+                                     p_col = c("cw_q_h", "cw_p_raw", "cw_q_global_bench"),
                                      predictor_order = NULL) {
   
   p_col <- match.arg(p_col)
@@ -1298,6 +1299,12 @@ oos_all_m_exp <- compute_oos_suite_monthly(
 results_table_m_exp <- oos_all_m_exp$results_table
 paths_df_m_exp      <- oos_all_m_exp$paths_df
 
+# Save full expanding-window OOS result grid
+readr::write_csv(
+  results_table_m_exp,
+  file.path(TAB_OOS, "monthly_oos_expanding_results.csv")
+)
+
 pred_vars_all_heat <- c(iv_levels_m, skew_ratio_m, skew_diff_m, wing_m)
 
 # Generate Expanding Window Heatmap
@@ -1306,9 +1313,10 @@ fig9_m <- plot_heatmap_raw_monthly(
   bm = benchmarks_exp,
   predictor_order = pred_vars_all_heat,
   sig_level = 0.1,
-  p_col = "cw_q_h"        # <-- family wise multiple adjustment
+  p_col = "cw_q_h"        # <-- family wise multiple adjustment; Use "cw_q_global_bench" for global benchmark
 )
 
+# Save full expanding-window OOS heatmap
 ggsave(
   filename = file.path(FIG_HM, "fig9_heatmap_oos_monthly_Expanding.png"),
   plot     = fig9_m,
@@ -1353,6 +1361,12 @@ oos_all_m_roll <- compute_oos_suite_monthly(
 results_table_m_roll <- oos_all_m_roll$results_table
 paths_df_m_roll      <- oos_all_m_roll$paths_df
 
+# Save full rolling-window OOS result grid
+readr::write_csv(
+  results_table_m_roll,
+  file.path(TAB_OOS, "monthly_oos_rolling_results.csv")
+)
+
 #Plot Rolling Heatmap
 fig12_m_roll <- plot_heatmap_raw_monthly(
   results_table_m_roll,
@@ -1362,6 +1376,7 @@ fig12_m_roll <- plot_heatmap_raw_monthly(
   p_col = "cw_q_h"
 )
 
+# Save full rolling-window OOS heatmap
 ggsave(
   filename = file.path(FIG_HM, "fig12_heatmap_oos_monthly_Rolling.png"),
   plot     = fig12_m_roll,
