@@ -256,6 +256,8 @@ outputs/monthly/tables/02_insample/Tab7_insample_controls_vix_results_long.csv
 ```text
 outputs/monthly/tables/03_oos/monthly_oos_expanding_results.csv
 outputs/monthly/tables/03_oos/monthly_oos_rolling_results.csv
+outputs\monthly\tables\03_oos\monthly_oos_combined_results.csv
+outputs\monthly\tables\03_oos\monthly_oos_significance_summary.csv
 ```
 
 ### Daily analysis

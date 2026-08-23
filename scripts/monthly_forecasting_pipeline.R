@@ -1345,7 +1345,7 @@ ggsave(
 
 pred_vars_roll   <- c(iv_levels_m, skew_ratio_m, skew_diff_m, wing_m)
 windows_roll     <- c(48,60,72,120)
-horizons_roll    <- c(3,6,12)
+horizons_roll    <- c(1,3,6,12)
 benchmarks_roll  <- "rolling"
 window_type_roll <- "rolling"
 
@@ -1384,7 +1384,7 @@ ggsave(
 )
 
 #Robust Variables according to criteria
-results_table_m_roll <- results_table_m_roll %>%
+results_table_m_roll_sig <- results_table_m_roll %>%
   mutate(
     window_months = as.numeric(window_months),
     pass = (R2_oos_raw > 0) & is.finite(cw_q_h) & (cw_q_h <= 0.10)
@@ -1433,6 +1433,103 @@ ggsave(
   filename = file.path(FIG_APP, "figC2_paths_cumR2_monthly_Rolling_120m.png"),
   plot     = figC2_m_roll,
   width    = 8, height = 4.5, dpi = 300
+)
+
+
+# 12.3) Combined Monthly OOS Results
+
+# Combine the full expanding and rolling result grids
+# Significance definition matches the heatmaps:
+# positive OOS R2 AND BH-adjusted Clark-West q-value <= 10%
+
+monthly_oos_combined <- dplyr::bind_rows(
+  
+  results_table_m_exp %>%
+    dplyr::mutate(procedure = "Expanding"),
+  
+  results_table_m_roll %>%
+    dplyr::mutate(procedure = "Rolling")
+  
+) %>%
+  dplyr::mutate(
+    
+    significant = dplyr::if_else(
+      is.finite(R2_oos_raw) &
+        is.finite(cw_q_h) &
+        R2_oos_raw > 0 &
+        cw_q_h <= 0.10,
+      1L,
+      0L
+    )
+    
+  ) %>%
+  dplyr::relocate(procedure, .before = predictor) %>%
+  dplyr::arrange(
+    procedure,
+    predictor,
+    horizon,
+    window_months
+  )
+
+
+# Number of significant results
+
+total_tests <- nrow(monthly_oos_combined)
+
+total_significant <- sum(
+  monthly_oos_combined$significant,
+  na.rm = TRUE
+)
+
+significant_share <- total_significant / total_tests
+
+
+# Print overall totals
+cat(
+  "\nTotal monthly OOS specifications:", total_tests,
+  "\nSignificant results:", total_significant,
+  "\nShare significant:", scales::percent(significant_share, accuracy = 0.1),
+  "\n"
+)
+
+
+# Summary by procedure
+
+monthly_oos_significance_summary <- monthly_oos_combined %>%
+  dplyr::group_by(procedure) %>%
+  dplyr::summarise(
+    n_tests       = dplyr::n(),
+    n_significant = sum(significant, na.rm = TRUE),
+    pct_significant = 100 * n_significant / n_tests,
+    .groups = "drop"
+  ) %>%
+  dplyr::bind_rows(
+    monthly_oos_combined %>%
+      dplyr::summarise(
+        procedure      = "Total",
+        n_tests        = dplyr::n(),
+        n_significant  = sum(significant, na.rm = TRUE),
+        pct_significant = 100 * n_significant / n_tests
+      )
+  )
+
+# Print full combined results table
+print(monthly_oos_combined, n = Inf)
+
+
+# Print significance summary
+print(monthly_oos_significance_summary)
+
+# Save machine-readable tables
+
+readr::write_csv(
+  monthly_oos_combined,
+  file.path(TAB_OOS, "monthly_oos_combined_results.csv")
+)
+
+readr::write_csv(
+  monthly_oos_significance_summary,
+  file.path(TAB_OOS, "monthly_oos_significance_summary.csv")
 )
 
 # ---- 13) Function for Expanding/Rolling betas (monthly) -----------------------------------------

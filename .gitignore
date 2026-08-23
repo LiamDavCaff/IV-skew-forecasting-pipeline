@@ -105,6 +105,8 @@ outputs/**
 # Monthly - out-of-sample results
 !outputs/monthly/tables/03_oos/monthly_oos_expanding_results.csv
 !outputs/monthly/tables/03_oos/monthly_oos_rolling_results.csv
+!outputs/monthly/tables/03_oos/monthly_oos_combined_results.csv
+!outputs/monthly/tables/03_oos/monthly_oos_significance_summary.csv
 
 # Daily - out-of-sample results
 !outputs/daily/tables/01_oos/daily_oos_expanding_results.csv
