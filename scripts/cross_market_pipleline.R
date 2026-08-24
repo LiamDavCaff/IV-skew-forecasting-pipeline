@@ -665,9 +665,9 @@ results_exp <- purrr::map_dfr(PREDICTORS_CROSS_EXP, function(pred) {
   )
 })
 
-# MULTIPLE TESTING  (same logic as the monthly suite
-# Within each (benchmark, window_type, horizon) slice, adjust CW p-values
-# across all indices × predictors × windows in that slice.
+# MULTIPLE TESTING
+# For each fixed benchmark, window type, estimation window,
+# predictor and horizon, adjust Clark-West p-values across indices.
 results_exp <- results_exp %>%
   group_by(
     benchmark,
@@ -768,9 +768,9 @@ results_roll <- purrr::map_dfr(PREDICTORS_CROSS_ROLL, function(pred) {
   )
 })
 
-# MULTIPLE TESTING  (same logic as your monthly suite
-# Within each (benchmark, window_type, horizon) slice, adjust CW p-values
-# across all indices × predictors × windows in that slice.
+# MULTIPLE TESTING
+# For each fixed benchmark, window type, estimation window,
+# predictor and horizon, adjust Clark-West p-values across indices.
 results_roll <- results_roll %>%
   group_by(
     benchmark,
