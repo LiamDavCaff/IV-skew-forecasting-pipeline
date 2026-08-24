@@ -17,9 +17,9 @@ Where applicable, the OOS framework uses:
 
 - rolling or expanding predictive regressions with no look-ahead bias;
 - like-for-like rolling or expanding historical-mean benchmarks;
-- Campbell--Thompson out-of-sample \(R^2\);
-- Clark--West tests for nested forecast comparisons; and
-- Benjamini--Hochberg false-discovery-rate (BH-FDR) adjustment of Clark--West p-values using the testing families defined in the analysis.
+- Campbell-Thompson out-of-sample \(R^2\);
+- Clark-West tests for nested forecast comparisons; and
+- Benjamini-Hochberg false-discovery-rate (BH-FDR) adjustment of Clark-West p-values using the testing families defined in the analysis.
 
 The repository contains:
 
@@ -282,8 +282,8 @@ The OOS result grids contain the relevant model identifiers and derived forecast
 - benchmark specification;
 - rolling/expanding estimation procedure;
 - out-of-sample \(R^2\);
-- Clark--West test statistic;
-- raw Clark--West p-value;
+- Clark-West test statistic;
+- raw Clark-West p-value;
 - average estimated coefficient;
 - primary BH-FDR adjusted q-value; and
 - broader global BH-FDR robustness adjustment.
