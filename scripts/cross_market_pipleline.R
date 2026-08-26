@@ -59,7 +59,7 @@ INDEX_KEYS <- c("SPX","FTSE","DAX","ASX","ESTOX","KOSPI","NASDAQ","NIFTY","NIKKE
 
 # Default naming convention: data/bbg_<lowercase key>_data.rds
 INDEX_PATHS <- setNames(
-  file.path("data", paste0("bbg_", tolower(INDEX_KEYS), "_data.rds")),
+  file.path(ROOT,"data", paste0("bbg_", tolower(INDEX_KEYS), "_data.rds")),
   INDEX_KEYS
 )
 
