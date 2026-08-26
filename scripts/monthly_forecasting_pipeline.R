@@ -50,7 +50,7 @@ invisible(lapply(dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
 # ---- 1) Load data --------------------------------------------------------
 
 # Update path if needed:
-DATA_FILE <- file.path("data", "bbg_spx_data.rds")
+DATA_FILE <- file.path(ROOT, "data", "bbg_spx_data.rds")
 
 if (!file.exists(DATA_FILE)) {
   stop(
